@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.vercel/
+*.log
+.DS_Store
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+# Local backups contain financial data — keep them outside git
+server/backups/
