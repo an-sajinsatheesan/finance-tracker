@@ -44,15 +44,15 @@ function Avatar({ name, className }: { name?: string; className?: string }) {
   );
 }
 
-/** Live clock for the header (updates every 30 s). */
+/** Live clock for the header (updates every 30 s), in Dubai time like the app's months, not the device's time zone. */
 function Clock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const t = window.setInterval(() => setNow(new Date()), 30_000);
     return () => window.clearInterval(t);
   }, []);
-  const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
-  const date = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dubai' });
+  const date = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Dubai' });
   return (
     <div className="hidden items-center gap-1.5 whitespace-nowrap text-xs font-medium text-stone-600 xl:flex">
       <Clock3 className="size-4 text-stone-500" />
