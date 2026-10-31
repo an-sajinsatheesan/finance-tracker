@@ -167,10 +167,10 @@ function Register({ onSignIn }: { onSignIn: () => void }) {
   );
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-4">
+    <form onSubmit={submit} noValidate className="space-y-3">
       <div>
         <h2 className="text-xl font-semibold tracking-tight">Create your account</h2>
-        <p className="mt-1 text-sm text-stone-500">Set up a workspace for yourself, or for you and your partner.</p>
+        <p className="mt-0.5 text-sm text-stone-500">For yourself, or for you and your partner.</p>
       </div>
       <FormAlert text={alert} />
       <div className="grid grid-cols-2 gap-2">
@@ -186,20 +186,19 @@ function Register({ onSignIn }: { onSignIn: () => void }) {
       <Field label="Email address" htmlFor="reg-email" required error={v.show('email')}>
         <TextInput id="reg-email" type="email" value={f.email} onChange={(x) => set('email', x)} onBlur={v.blur('email')} invalid={!!v.show('email')} autoComplete="email" placeholder="you@example.com" />
       </Field>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Password" htmlFor="reg-pass" required error={v.show('password')} hint="At least 8 characters">
-          <PasswordInput id="reg-pass" value={f.password} onChange={(x) => set('password', x)} onBlur={v.blur('password')} invalid={!!v.show('password')} autoComplete="new-password" />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Password" htmlFor="reg-pass" required error={v.show('password')}>
+          <PasswordInput id="reg-pass" value={f.password} onChange={(x) => set('password', x)} onBlur={v.blur('password')} invalid={!!v.show('password')} autoComplete="new-password" placeholder="8+ characters" />
         </Field>
         <Field label="Confirm password" htmlFor="reg-confirm" required error={v.show('confirm')}>
           <PasswordInput id="reg-confirm" value={f.confirm} onChange={(x) => set('confirm', x)} onBlur={v.blur('confirm')} invalid={!!v.show('confirm')} autoComplete="new-password" />
         </Field>
       </div>
       {couple && (
-        <fieldset className="space-y-3 rounded-2xl border border-violet-100 bg-linear-to-br from-white to-violet-50 p-4">
+        <fieldset className="space-y-2.5 rounded-2xl border border-violet-100 bg-linear-to-br from-white to-violet-50 p-3">
           <legend className="sr-only">Your partner</legend>
-          <div className="flex items-center gap-2.5" aria-hidden>
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-violet-200 bg-white text-violet-500"><Heart className="size-4" /></span>
-            <span className="text-sm font-semibold text-stone-800">Your partner</span>
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-800" aria-hidden>
+            <Heart className="size-3.5 text-violet-500" /> Your partner
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Name" htmlFor="reg-pname" required error={v.show('partnerName')}>
@@ -207,7 +206,7 @@ function Register({ onSignIn }: { onSignIn: () => void }) {
             </Field>
             <Field label="Relationship" htmlFor="reg-prel"><Select id="reg-prel" value={f.partnerRelationship} onChange={(x) => set('partnerRelationship', x)} options={RELATIONSHIPS} /></Field>
           </div>
-          <Field label="Email (optional)" htmlFor="reg-pemail" error={v.show('partnerEmail')} hint="We’ll email an invitation once your account is created. You can also invite later from Settings.">
+          <Field label="Email (optional)" htmlFor="reg-pemail" error={v.show('partnerEmail')} hint="We’ll email an invitation. You can also invite later from Settings.">
             <TextInput id="reg-pemail" type="email" value={f.partnerEmail} onChange={(x) => set('partnerEmail', x)} onBlur={v.blur('partnerEmail')} invalid={!!v.show('partnerEmail')} placeholder="partner@example.com" />
           </Field>
         </fieldset>
@@ -243,42 +242,52 @@ function Feature({ tint, icon, title, text }: { tint: Tint; icon: ReactNode; tit
   );
 }
 
-/** Auth layout in the dashboard's style: grey canvas, feature tiles on the left (desktop), form card on the right. */
+function Brand() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <Logo />
+      <div>
+        <div className="text-[15px] font-bold tracking-tight">Household Finance</div>
+        <div className="text-[11px] text-stone-500">Budget, bills and wealth</div>
+      </div>
+    </div>
+  );
+}
+
+const PRIVACY = <><ShieldCheck className="size-3.5 shrink-0" /> Private to your workspace. Passwords are stored as secure hashes.</>;
+
+/**
+ * Auth layout in the dashboard's style: grey canvas, feature tiles on the left (desktop),
+ * form card on the right. The page itself never scrolls; only on a very short screen
+ * does the card scroll inside itself.
+ */
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
-    <div className="scroll-thin h-dvh overflow-y-auto">
-      <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col px-4 py-6 md:px-6 lg:py-8">
-        <header className="flex items-center gap-2.5">
-          <Logo />
-          <div>
-            <div className="text-[15px] font-bold tracking-tight">Household Finance</div>
-            <div className="text-[11px] text-stone-500">Budget, bills and wealth</div>
-          </div>
-        </header>
-        <div className="grid flex-1 items-center gap-10 py-8 lg:grid-cols-[1fr_28rem] lg:gap-16">
-          <section className="hidden lg:block">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-800">
-              <Users className="size-3.5" /> For one person or a couple
-            </span>
-            <h1 className="mt-4 text-4xl font-semibold leading-tight tracking-tight">
-              Your money, together —<br /><span className="text-brand-700">clear every month.</span>
-            </h1>
-            <p className="mt-3 max-w-md text-sm text-stone-500">Budget, bills and net worth across AED and INR, in one shared workspace.</p>
-            <ul className="mt-8 grid max-w-xl grid-cols-2 gap-3">
-              <Feature tint="blue" icon={<PieChart className="size-4" />} title="Budget vs actual" text="Income, expenses and commitments, month by month." />
-              <Feature tint="amber" icon={<BellRing className="size-4" />} title="Never miss a bill" text="Reminders before rent, EMIs and other dues." />
-              <Feature tint="purple" icon={<Landmark className="size-4" />} title="Wealth in AED & INR" text="Bank balances, deposits, SIPs, stocks and loans." />
-              <Feature tint="pink" icon={<Heart className="size-4" />} title="Shared costs, fairly split" text="Common bills split 50/50 with a monthly settle-up." />
-            </ul>
-          </section>
-          <main className="w-full max-w-md justify-self-center lg:max-w-none">
-            <div className="card p-6 sm:p-8">{children}</div>
-          </main>
+    <div className="mx-auto grid h-dvh w-full max-w-6xl gap-16 overflow-hidden px-4 py-4 md:px-6 lg:grid-cols-[1fr_30rem] lg:py-6">
+      <section className="hidden min-h-0 flex-col justify-between lg:flex">
+        <Brand />
+        <div>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-800">
+            <Users className="size-3.5" /> For one person or a couple
+          </span>
+          <h1 className="mt-4 text-4xl font-semibold leading-tight tracking-tight">
+            Your money, together —<br /><span className="text-brand-700">clear every month.</span>
+          </h1>
+          <p className="mt-3 max-w-md text-sm text-stone-500">Budget, bills and net worth across AED and INR, in one shared workspace.</p>
+          <ul className="mt-8 grid max-w-xl grid-cols-2 gap-3">
+            <Feature tint="blue" icon={<PieChart className="size-4" />} title="Budget vs actual" text="Income, expenses and commitments, month by month." />
+            <Feature tint="amber" icon={<BellRing className="size-4" />} title="Never miss a bill" text="Reminders before rent, EMIs and other dues." />
+            <Feature tint="purple" icon={<Landmark className="size-4" />} title="Wealth in AED & INR" text="Bank balances, deposits, SIPs, stocks and loans." />
+            <Feature tint="pink" icon={<Heart className="size-4" />} title="Shared costs, fairly split" text="Common bills split 50/50 with a monthly settle-up." />
+          </ul>
         </div>
-        <footer className="flex items-center justify-center gap-1.5 text-[11px] text-stone-500 lg:justify-start">
-          <ShieldCheck className="size-3.5" /> Private to your workspace. Passwords are stored as secure hashes.
-        </footer>
-      </div>
+        <p className="flex items-center gap-1.5 text-[11px] text-stone-500">{PRIVACY}</p>
+      </section>
+      <main className="mx-auto flex min-h-0 w-full max-w-md flex-col justify-center gap-4 lg:max-w-none">
+        <div className="lg:hidden"><Brand /></div>
+        <div className="card scroll-thin min-h-0 overflow-y-auto p-6">{children}</div>
+        <p className="flex items-center justify-center gap-1.5 text-[11px] text-stone-500 lg:hidden">{PRIVACY}</p>
+      </main>
     </div>
   );
 }
@@ -287,7 +296,7 @@ export default function Login({ initialMode = 'login' }: { initialMode?: Mode })
   const [mode, setMode] = useState<Mode>(initialMode);
   return (
     <AuthShell>
-      <div className="mb-6"><Tabs<Mode> value={mode} onChange={setMode} full items={[{ value: 'login', label: 'Sign in' }, { value: 'register', label: 'Create account' }]} /></div>
+      <div className="mb-5"><Tabs<Mode> value={mode} onChange={setMode} full items={[{ value: 'login', label: 'Sign in' }, { value: 'register', label: 'Create account' }]} /></div>
       {mode === 'login' ? <SignIn onRegister={() => setMode('register')} /> : <Register onSignIn={() => setMode('login')} />}
     </AuthShell>
   );

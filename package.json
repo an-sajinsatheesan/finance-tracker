@@ -12,6 +12,7 @@
     "seed": "npm run seed -w server",
     "backup": "npm run backup -w server",
     "restore": "npm run restore -w server --",
+    "reset": "npm run reset -w server --",
     "test": "npm run test -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w client"
   },

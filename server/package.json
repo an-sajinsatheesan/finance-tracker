@@ -11,6 +11,7 @@
     "seed:demo": "tsx src/scripts/seed-demo.ts",
     "backup": "tsx src/scripts/backup.ts",
     "restore": "tsx src/scripts/restore.ts",
+    "reset": "tsx src/scripts/reset.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
