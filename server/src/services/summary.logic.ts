@@ -80,7 +80,8 @@ export function computeCards(d: Dataset, month: string, scope: Scope) {
   return {
     incomeExpected,
     incomeReceived,
-    incomePending: round2(Math.max(0, incomeExpected - incomeReceived)),
+    // Income marked received counts as complete even when smaller than expected (e.g. a salary cut).
+    incomePending: sum(inc.filter((i) => i.status !== 'received').map((i) => Math.max(0, i.expectedAmount - i.receivedAmount))),
     personalExpenses,
     commonShare,
     commonTotal,

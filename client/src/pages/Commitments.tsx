@@ -20,7 +20,7 @@ export default function Commitments() {
   const { month } = useMonth();
   const { memberName, workspace, isCouple } = useAuth();
   const toast = useToast();
-  const list = useApi<Commitment[]>('/commitments');
+  const list = useApi<Commitment[]>(`/commitments?month=${month}`);
   const future = month > thisMonth();
   const expenses = useApi<Expense[]>(future ? null : `/expenses?month=${month}`);
   const [tab, setTab] = useState<Tab>('active');

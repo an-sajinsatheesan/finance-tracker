@@ -6,8 +6,8 @@ import { ACCOUNT_GROUPS, type AccountGroup } from '../utils/lookups.js';
 import { Account, AccountBalance, Expense, Income, Lookup, Transfer } from '../models/index.js';
 import { assertMember, ensureMonthIncome, getWorkspace } from './workspace.service.js';
 import { assertLookup } from './lookup.service.js';
-import { computeWealth, type AccountRow } from './wealth.logic.js';
-import { computeBalances } from './balances.logic.js';
+import { balanceAt as latestBalance, computeWealth, type AccountRow, type BalanceRow } from './wealth.logic.js';
+import { balanceAt as calculatedBalanceAt, computeBalances, indexFlows } from './balances.logic.js';
 
 type AccountInput = {
   name: string; bank: string; currency: string; accountType: string; type: 'personal' | 'common';
@@ -179,20 +179,23 @@ const TREND_MONTHS = 12;
 export async function getWealth(workspaceId: string, month: string, scope = 'all') {
   const ws = await getWorkspace(workspaceId);
   if (scope !== 'all' && scope !== 'common') await assertMember(workspaceId, scope, 'scope');
-  const accounts = (await listAccounts(workspaceId)).filter((a) =>
+  const all = await listAccounts(workspaceId);
+  const accounts = all.filter((a) =>
     scope === 'all' ? true : scope === 'common' ? a.type === 'common' : a.ownerId === scope,
   );
   const ids = accounts.map((a) => a.id);
   const first = addMonths(month, -TREND_MONTHS);
-  const [balances, transfers] = await Promise.all([
+  const [balances, transfers, linkedMoney] = await Promise.all([
     AccountBalance.find({ workspaceId, accountId: { $in: ids }, month: { $lte: month } }).lean(),
     Transfer.find({ workspaceId, status: 'active', month: { $gt: first, $lte: month } }).lean(),
+    loadLinkedMoney(workspaceId, all.map((a) => a.id), month), // transfers to accounts outside the scope still move these balances
   ]);
   const idSet = new Set(ids);
   const fx = ws.fxRates instanceof Map ? Object.fromEntries(ws.fxRates) : { ...(ws.fxRates ?? {}) };
+  const recorded: BalanceRow[] = balances.map((b) => ({ accountId: String(b.accountId), month: b.month, balance: b.balance, invested: b.invested }));
   return computeWealth({
     accounts: accounts as AccountRow[],
-    balances: balances.map((b) => ({ accountId: String(b.accountId), month: b.month, balance: b.balance, invested: b.invested })),
+    balances: [...recorded, ...calculatedMonths(accounts as AccountRow[], recorded, linkedMoney, month)],
     transfers: transfers
       .filter((t) => idSet.has(String(t.fromAccountId)) && idSet.has(String(t.toAccountId)))
       .map((t) => ({ month: t.month, date: t.date, fromAccountId: String(t.fromAccountId), toAccountId: String(t.toAccountId), amount: t.amount, toAmount: t.toAmount, fee: t.fee })),
@@ -202,25 +205,17 @@ export async function getWealth(workspaceId: string, month: string, scope = 'all
 
 // ---------- Calculated balances & savings ----------
 
-/** Account balances moved by the income, expenses and transfers linked to them, plus monthly savings per person. */
-export async function getBalances(workspaceId: string, month: string) {
-  const ws = await getWorkspace(workspaceId);
-  await ensureMonthIncome(workspaceId, month);
-  const accounts = await listAccounts(workspaceId);
-  const ids = accounts.map((a) => a.id);
+/** Income, expenses and transfers linked to the workspace's accounts, up to the end of `month`. */
+async function loadLinkedMoney(workspaceId: string, accountIds: string[], month: string) {
   // Income for next month's budget can already be in the bank (paid at the end of this month).
-  const [snapshots, incomes, expenses, transfers] = await Promise.all([
-    AccountBalance.find({ workspaceId, accountId: { $in: ids }, month: { $lte: month } }).lean(),
+  const [incomes, expenses, transfers] = await Promise.all([
     Income.find({ workspaceId, month: { $lte: addMonths(month, 1) }, status: { $ne: 'archived' } }).lean(),
     Expense.find({ workspaceId, month: { $lte: month }, status: 'active' }).lean(),
     Transfer.find({ workspaceId, status: 'active', month: { $lte: month } }).lean(),
   ]);
-  const fx = ws.fxRates instanceof Map ? Object.fromEntries(ws.fxRates) : { ...(ws.fxRates ?? {}) };
-  const idSet = new Set(ids);
+  const idSet = new Set(accountIds);
   const linked = (id: unknown) => (id && idSet.has(String(id)) ? String(id) : null);
-  return computeBalances({
-    accounts: accounts as AccountRow[],
-    snapshots: snapshots.map((s) => ({ accountId: String(s.accountId), month: s.month, balance: s.balance })),
+  return {
     incomes: incomes.map((i) => ({
       userId: String(i.userId), month: i.month, receivedDate: i.receivedDate ?? null, receivedAmount: i.receivedAmount ?? 0,
       status: i.status, accountId: linked(i.accountId),
@@ -232,6 +227,44 @@ export async function getBalances(workspaceId: string, month: string) {
     transfers: transfers
       .filter((t) => idSet.has(String(t.fromAccountId)) && idSet.has(String(t.toAccountId)))
       .map((t) => ({ month: t.month, fromAccountId: String(t.fromAccountId), toAccountId: String(t.toAccountId), amount: t.amount, toAmount: t.toAmount, fee: t.fee ?? 0 })),
+  };
+}
+
+/**
+ * For months without an entered balance, the same calculated balance the Balances page shows
+ * (last entered balance + linked money in − money out), so Accounts and Wealth agree with it.
+ */
+function calculatedMonths(accounts: AccountRow[], recorded: BalanceRow[], money: Awaited<ReturnType<typeof loadLinkedMoney>>, month: string): BalanceRow[] {
+  const flows = indexFlows(money.incomes, money.expenses, money.transfers);
+  const out: BalanceRow[] = [];
+  for (const a of accounts) {
+    for (let i = 0; i <= TREND_MONTHS; i++) {
+      const m = addMonths(month, -i);
+      if (recorded.some((r) => r.accountId === a.id && r.month === m)) continue;
+      const calc = calculatedBalanceAt(a, m, recorded, flows);
+      const last = latestBalance(recorded, a.id, m);
+      if (!calc || (!last && calc.balance === 0)) continue; // nothing entered or linked yet
+      out.push({ accountId: a.id, month: m, balance: calc.balance, invested: last?.invested ?? null, calculated: true });
+    }
+  }
+  return out;
+}
+
+/** Account balances moved by the income, expenses and transfers linked to them, plus monthly savings per person. */
+export async function getBalances(workspaceId: string, month: string) {
+  const ws = await getWorkspace(workspaceId);
+  await ensureMonthIncome(workspaceId, month);
+  const accounts = await listAccounts(workspaceId);
+  const ids = accounts.map((a) => a.id);
+  const [snapshots, money] = await Promise.all([
+    AccountBalance.find({ workspaceId, accountId: { $in: ids }, month: { $lte: month } }).lean(),
+    loadLinkedMoney(workspaceId, ids, month),
+  ]);
+  const fx = ws.fxRates instanceof Map ? Object.fromEntries(ws.fxRates) : { ...(ws.fxRates ?? {}) };
+  return computeBalances({
+    accounts: accounts as AccountRow[],
+    snapshots: snapshots.map((s) => ({ accountId: String(s.accountId), month: s.month, balance: s.balance })),
+    ...money,
     memberIds: ws.members.map((m) => String(m.userId)),
     month,
     startMonth: ws.startMonth,

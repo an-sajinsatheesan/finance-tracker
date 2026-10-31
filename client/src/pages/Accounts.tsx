@@ -437,7 +437,7 @@ export default function Accounts() {
         <>
           {stale > 0 && inCurrency.length > 0 && (
             <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              {stale} of {inCurrency.length} {tab} account{inCurrency.length > 1 ? 's' : ''} not updated for {monthLabel(month)} — showing the last recorded balance.{' '}
+              {stale} of {inCurrency.length} {tab} account{inCurrency.length > 1 ? 's' : ''} without an entered balance for {monthLabel(month)}: showing the calculated balance (last entered balance + linked income − expenses).{' '}
               <button className="font-medium underline" onClick={() => setModal('balances')}>Update now</button>
             </div>
           )}
@@ -465,7 +465,7 @@ export default function Accounts() {
               <Column header="Account" body={(a: WealthAccount) => (
                 <div>
                   <div className="flex items-center gap-1.5 font-medium">{a.name}{a.accountNumberLast4 && <span className="num text-[11px] font-normal text-stone-400">••{a.accountNumberLast4}</span>}</div>
-                  <div className="text-[11px] text-stone-500">{label('bank', a.bank)} · {label('accountType', a.accountType)}{!a.recordedThisMonth && a.lastRecordedMonth && ` · as of ${monthLabel(a.lastRecordedMonth, 'short')}`}</div>
+                  <div className="text-[11px] text-stone-500">{label('bank', a.bank)} · {label('accountType', a.accountType)}{!a.recordedThisMonth && a.lastRecordedMonth && ` · calculated from ${monthLabel(a.lastRecordedMonth, 'short')}`}</div>
                 </div>
               )} />
               {isCouple && <Column header="Owner" body={(a: WealthAccount) => a.type === 'common' ? <Badge tone="violet">Joint</Badge> : <span className="text-xs text-stone-600">{memberName(a.ownerId)}</span>} />}

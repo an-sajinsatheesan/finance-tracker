@@ -199,7 +199,7 @@ export default function WealthPage() {
           {(data.missingRates.length > 0 || data.staleAccounts.length > 0) && (
             <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               {data.missingRates.length > 0 && <div>Set the exchange rate for {data.missingRates.join(', ')} below — it’s left out of the combined total until then.</div>}
-              {data.staleAccounts.length > 0 && <div>{data.staleAccounts.length} account{data.staleAccounts.length > 1 ? 's were' : ' was'} not updated for {monthLabel(month)}; their last balance is carried forward. <Link to="/accounts" className="font-medium underline">Update balances</Link></div>}
+              {data.staleAccounts.length > 0 && <div>{data.staleAccounts.length} account{data.staleAccounts.length > 1 ? 's were' : ' was'} without an entered balance for {monthLabel(month)}; their balance is calculated from the last entered one plus linked income and expenses. <Link to="/accounts" className="font-medium underline">Update balances</Link></div>}
             </div>
           )}
 

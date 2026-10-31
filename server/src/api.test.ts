@@ -301,5 +301,14 @@ d('API', () => {
     await request(app).put(`/api/accounts/${acc.body.id}`).set(auth(tokenS)).send({ openedMonth: prev }).expect(200);
     const b = await request(app).get(`/api/balances?month=${prev}`).set(auth(tokenS)).expect(200);
     expect(b.body.accounts.find((a: any) => a.id === acc.body.id)).toMatchObject({ closing: 5000, recorded: true });
+
+    // Accounts / Wealth show the same calculated balance as Balances when no balance was entered for the month.
+    await request(app).post('/api/income').set(auth(tokenS)).send({
+      userId: sajinId, month, source: 'Salary', expectedAmount: 1200, receivedAmount: 1000, receivedDate: `${month}-01`, accountId: acc.body.id, status: 'received',
+    }).expect(201);
+    const w = await request(app).get(`/api/wealth?month=${month}`).set(auth(tokenS)).expect(200);
+    expect(w.body.accounts.find((a: any) => a.id === acc.body.id)).toMatchObject({ current: 6000, previous: 5000, recordedThisMonth: false, lastRecordedMonth: prev });
+    const s = await request(app).get(`/api/summary?month=${month}&scope=${sajinId}`).set(auth(tokenS)).expect(200);
+    expect(s.body.cards.incomePending).toBe(0); // 1000 of 1200 marked received: nothing left pending
   });
 });

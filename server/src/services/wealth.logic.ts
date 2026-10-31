@@ -17,7 +17,8 @@ export interface AccountRow {
   id: string; name: string; bank: string; currency: string; accountType: string; group: AccountGroup;
   type: 'personal' | 'common'; ownerId?: string | null; openedMonth: string;
 }
-export interface BalanceRow { accountId: string; month: string; balance: number; invested?: number | null }
+/** `calculated`: not entered by the user, worked out from the linked income, expenses and transfers. */
+export interface BalanceRow { accountId: string; month: string; balance: number; invested?: number | null; calculated?: boolean }
 export interface TransferRow { month: string; date: string; fromAccountId: string; toAccountId: string; amount: number; toAmount: number; fee?: number }
 
 type GroupTotals = Record<AccountGroup, number>;
@@ -60,6 +61,7 @@ export function computeWealth(input: {
   month: string; base: string; fx: Record<string, number>; trendMonths?: number;
 }) {
   const { accounts, balances, transfers, month, base, fx } = input;
+  const entered = balances.filter((b) => !b.calculated);
   const prev = addMonths(month, -1);
   const missingRates = new Set<string>();
   const conv = (v: number, cur: string) => {
@@ -81,8 +83,8 @@ export function computeWealth(input: {
         current,
         previous,
         change: current !== null ? round2(current - (previous ?? 0)) : null,
-        recordedThisMonth: cur?.month === month,
-        lastRecordedMonth: cur?.month ?? null,
+        recordedThisMonth: cur?.month === month && !cur.calculated,
+        lastRecordedMonth: balanceAt(entered, a.id, month)?.month ?? null,
         invested,
         gain: a.group === 'investment' && invested !== null && current !== null ? round2(current - invested) : null,
       };

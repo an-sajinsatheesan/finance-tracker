@@ -1,9 +1,12 @@
 import type { Request, Response } from 'express';
 import { authUser } from '../middleware/auth.js';
 import * as svc from '../services/commitment.service.js';
+import { MONTH_RE } from '../utils/month.js';
 
 export async function list(req: Request, res: Response) {
-  res.json(await svc.listCommitments(authUser(req).workspaceId));
+  // Optional ?month=YYYY-MM: tabs (active / scheduled / ended) and amounts as of the month on screen.
+  const month = typeof req.query.month === 'string' && MONTH_RE.test(req.query.month) ? req.query.month : undefined;
+  res.json(await svc.listCommitments(authUser(req).workspaceId, month));
 }
 export async function create(req: Request, res: Response) {
   const u = authUser(req);

@@ -31,6 +31,9 @@ function IncomeForm({ initial, month, onSaved, onCancel }: { initial?: Income; m
     receivedDate: initial?.receivedDate ?? '',
     notes: initial?.notes ?? '',
   });
+  // Less than expected but nothing more is coming (e.g. a salary cut): received, not partial.
+  const [inFull, setInFull] = useState(!!initial && initial.status === 'received' && initial.receivedAmount < initial.expectedAmount);
+  const short = (f.receivedAmount ?? 0) > 0 && f.expectedAmount !== null && (f.receivedAmount ?? 0) < f.expectedAmount;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
@@ -40,7 +43,10 @@ function IncomeForm({ initial, month, onSaved, onCancel }: { initial?: Income; m
     if (f.expectedAmount === null) { setError('Enter the expected amount'); return; }
     setBusy(true);
     setError(null);
-    const body = { ...f, expectedAmount: f.expectedAmount, receivedAmount: f.receivedAmount ?? 0, accountId: f.accountId || null };
+    const body = {
+      ...f, expectedAmount: f.expectedAmount, receivedAmount: f.receivedAmount ?? 0, accountId: f.accountId || null,
+      status: short && inFull ? 'received' : undefined,
+    };
     try {
       if (initial) await api.put(`/income/${initial._id}`, body);
       else await api.post('/income', { ...body, month });
@@ -67,11 +73,17 @@ function IncomeForm({ initial, month, onSaved, onCancel }: { initial?: Income; m
         <Field label="Received amount"><NumberInput value={f.receivedAmount} onChange={(v) => set('receivedAmount', v)} min={0} /></Field>
         <Field label="Received date"><DateInput value={f.receivedDate} onChange={(v) => set('receivedDate', v)} max={todayStr()} /></Field>
       </div>
+      {short && (
+        <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-stone-200 px-3 py-2 text-xs text-stone-600">
+          <input type="checkbox" className="mt-0.5 accent-brand-600" checked={inFull} onChange={(e) => setInFull(e.target.checked)} />
+          <span><b className="text-stone-800">Received in full</b> — this was the whole payment (e.g. salary cut). Shows as Received instead of Partial, and nothing stays pending.</span>
+        </label>
+      )}
       <Field label="Received into" hint="Optional. The bank account the money was paid into; its balance on the Balances page goes up by the received amount.">
         <AccountSelect accounts={accounts.data} value={f.accountId} onChange={(v) => set('accountId', v)} ownerId={f.userId} purpose="in" />
       </Field>
       <Field label="Notes"><TextInput value={f.notes} onChange={(v) => set('notes', v)} maxLength={500} /></Field>
-      <p className="text-[11px] text-stone-500">Status is set automatically: expected, then partial, then received.</p>
+      <p className="text-[11px] text-stone-500">Status is set automatically: expected, then partial, then received (or tick “Received in full” for a smaller final amount).</p>
       <ErrorNote message={error} />
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel}>Cancel</Button>
@@ -175,7 +187,11 @@ export default function IncomePage() {
   }
   const markReceived = (i: Income) => {
     const today = todayStr();
-    act(`/income/${i._id}`, `${label('incomeSource', i.source)} marked received`, { receivedAmount: i.expectedAmount, receivedDate: today.startsWith(month) ? today : i.expectedDate || `${month}-01` });
+    act(`/income/${i._id}`, `${label('incomeSource', i.source)} marked received`, {
+      receivedAmount: i.expectedAmount,
+      // Never a future date: next month's salary marked early was paid today.
+      receivedDate: today.startsWith(month) || today < `${month}-01` ? today : i.expectedDate || `${month}-01`,
+    });
   };
   const askArchive = (i: Income) => confirmAction({
     header: 'Archive income?',
