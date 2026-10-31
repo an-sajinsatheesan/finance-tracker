@@ -45,7 +45,7 @@ export const LOOKUP_SEED: Record<LookupType, (Row & { system?: boolean })[]> = {
   commitmentType: sys([{ code: 'personal', label: 'Personal' }, { code: 'common', label: 'Common' }]),
   commitmentStatus: sys([{ code: 'active', label: 'Active' }, { code: 'scheduled', label: 'Scheduled' }, { code: 'ended', label: 'Ended' }]),
   category: [
-    { code: 'Rent' }, { code: 'DEWA/Utilities' }, { code: 'Internet' }, { code: 'Mobile' }, { code: 'Grocery' },
+    { code: 'Rent' }, { code: 'Utilities' }, { code: 'Internet' }, { code: 'Mobile' }, { code: 'Grocery' },
     { code: 'Home Loan' }, { code: 'EMI' }, { code: 'Car Loan' }, { code: 'Credit Card' }, { code: 'Chitti' },
     { code: 'Family Support' }, { code: 'Travel' }, { code: 'Fuel' }, { code: 'Dining' }, { code: 'Shopping' },
     { code: 'Medical' }, { code: 'Education' }, { code: 'Insurance' }, { code: 'Subscription' },

@@ -151,7 +151,7 @@ export async function seedDemo(opts: { reset?: boolean; log?: (s: string) => voi
     })).id;
   const C = {
     rent: await commit('Apartment rent', 'Rent', 'common', null, 7500, 1),
-    dewa: await commit('DEWA', 'DEWA/Utilities', 'common', null, 650, 10),
+    dewa: await commit('DEWA', 'Utilities', 'common', null, 650, 10),
     internet: await commit('du Home Internet', 'Internet', 'common', null, 389, 15),
     emi: await commit('Car loan EMI', 'Car Loan', 'personal', H, 2100, 5, { endMonth: addMonths(now, 19) }),
     rahulPhone: await commit('Rahul mobile (Etisalat)', 'Mobile', 'personal', H, 150, 20),

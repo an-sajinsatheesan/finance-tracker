@@ -24,7 +24,7 @@ const STEPS = [
 /** Step tiles in the dashboard's card style: done (green check), current (tinted), upcoming (plain). */
 function Stepper({ step }: { step: number }) {
   return (
-    <ol className="mb-5 grid grid-cols-4 gap-2 sm:gap-3">
+    <ol className="mb-4 grid shrink-0 grid-cols-4 gap-2 sm:gap-3">
       {STEPS.map((s, i) => {
         const done = i < step;
         const current = i === step;
@@ -61,7 +61,7 @@ function InviteNotice() {
   if (!invite) return null;
   const dismiss = () => { try { sessionStorage.removeItem('ft.invite'); } catch { /* ignore */ } setInvite(null); };
   return (
-    <div className="mb-4 flex items-start gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
+    <div className="mb-4 flex shrink-0 items-start gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
       <Mail className="mt-0.5 size-3.5 shrink-0" />
       <div className="min-w-0 flex-1 space-y-1">
         <div>{invite.sent ? <>Invitation sent to <b>{invite.email}</b>. They can join any time; you can carry on with the setup.</> : <>Email isn’t configured on the server — share this invitation link with <b>{invite.email}</b>:</>}</div>
@@ -75,8 +75,25 @@ function InviteNotice() {
 
 type SourceRow = IncomeSource & { _j: number };
 
+const newSource = (): IncomeSource => ({ source: 'Salary', amount: 0, expectedDay: 28, paidPreviousMonth: false, active: true });
+
+/** Card header shared by every member, so the fields below line up whatever the member's status. */
+function MemberHeader({ m, isMe }: { m: Member; isMe: boolean }) {
+  const initials = m.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
+  return (
+    <div className="flex items-center gap-2.5 border-b border-stone-200 px-3 py-2.5">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-brand-500 to-violet-500 text-xs font-semibold text-white">{initials}</span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold">{m.displayName || 'Member'}</div>
+        <div className="truncate text-[11px] text-stone-500">{m.email ?? (isMe ? 'Signed in' : 'No email')}</div>
+      </div>
+      {isMe ? <Badge tone="brand">You</Badge> : m.status === 'invited' ? <Badge tone="amber">Invitation pending</Badge> : <Badge>Member</Badge>}
+    </div>
+  );
+}
+
 export default function Setup() {
-  const { workspace, refreshWorkspace, logout, isCouple } = useAuth();
+  const { user, workspace, refreshWorkspace, logout, isCouple } = useAuth();
   const toast = useToast();
   const { setMonth } = useMonth();
   const [step, setStep] = useState(0);
@@ -111,6 +128,8 @@ export default function Setup() {
     setBusy(true);
     try {
       if (step <= 1) await saveWorkspace();
+      // Start everyone without income with one row to fill in (saved only when they continue).
+      if (step === 0) setMembers((ms) => ms.map((m) => (m.incomeSources.length ? m : { ...m, incomeSources: [newSource()] })));
       setStep((s) => s + 1);
     } catch (e) {
       setError(errorText(e));
@@ -155,8 +174,9 @@ export default function Setup() {
   }, [members, active, startMonth]);
 
   return (
-    <div className="scroll-thin h-dvh overflow-y-auto">
-      <header className="sticky top-0 z-30 border-b border-stone-200 bg-white">
+    // Fixed frame: header, stepper and the Back / Continue bar stay put; only the step's body scrolls.
+    <div className="flex h-dvh flex-col overflow-hidden">
+      <header className="shrink-0 border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-2.5 md:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
             <Logo />
@@ -171,8 +191,8 @@ export default function Setup() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-4xl px-4 py-6 md:px-6">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 py-5 md:px-6">
+        <div className="mb-4 flex shrink-0 flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Set up your workspace</h1>
             <p className="mt-0.5 text-xs text-stone-500">Four quick steps. Everything can be changed later.</p>
@@ -183,21 +203,23 @@ export default function Setup() {
 
         <Stepper step={step} />
 
-        <div className="card overflow-hidden">
-          <div className="border-b border-stone-200 px-5 py-3.5">
+        <div className="card flex min-h-0 flex-col overflow-hidden">
+          <div className="shrink-0 border-b border-stone-200 px-5 py-3.5">
             <h2 className="text-sm font-semibold text-stone-800">{STEPS[step]!.label}</h2>
             <p className="text-xs text-stone-500">{STEPS[step]!.hint}</p>
           </div>
-          <div className="p-5">
+          <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-5">
           {step === 0 && (
             <div className="space-y-4">
               <Field label="Workspace name"><TextInput value={name} onChange={setName} /></Field>
               <div className="grid gap-3 sm:grid-cols-2">
                 {members.map((m, i) => (
-                  <div key={m.userId} className="space-y-3 rounded-xl border border-stone-200 p-3">
-                    {m.status === 'invited' && <Badge tone="amber">Invitation pending{m.email ? ` · ${m.email}` : ''}</Badge>}
-                    <Field label="Display name"><TextInput value={m.displayName} onChange={(v) => updateMember(i, { displayName: v })} /></Field>
-                    <Field label="Relationship"><LookupSelect type="relationship" value={m.relationship} onChange={(v) => updateMember(i, { relationship: v })} showClear /></Field>
+                  <div key={m.userId} className="overflow-hidden rounded-xl border border-stone-200">
+                    <MemberHeader m={m} isMe={m.userId === user?.id} />
+                    <div className="space-y-3 p-3">
+                      <Field label="Display name"><TextInput value={m.displayName} onChange={(v) => updateMember(i, { displayName: v })} /></Field>
+                      <Field label="Relationship"><LookupSelect type="relationship" value={m.relationship} onChange={(v) => updateMember(i, { relationship: v })} showClear /></Field>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -227,7 +249,7 @@ export default function Setup() {
                     )} />
                   </DataTable>
                   <div className="px-2 py-1.5">
-                    <Button size="sm" variant="ghost" onClick={() => updateMember(i, { incomeSources: [...m.incomeSources, { source: 'Salary', amount: 0, expectedDay: 28, paidPreviousMonth: false, active: true }] })} icon={<Plus className="size-3.5" />}>
+                    <Button size="sm" variant="ghost" onClick={() => updateMember(i, { incomeSources: [...m.incomeSources, newSource()] })} icon={<Plus className="size-3.5" />}>
                       Add income source
                     </Button>
                   </div>
@@ -292,7 +314,7 @@ export default function Setup() {
 
             {error && <div className="mt-5"><ErrorNote message={error} /></div>}
           </div>
-          <div className="flex justify-between border-t border-stone-200 bg-stone-50 px-5 py-3">
+          <div className="flex shrink-0 justify-between border-t border-stone-200 bg-stone-50 px-5 py-3">
             <Button disabled={step === 0} onClick={() => setStep((s) => s - 1)}>Back</Button>
             {step < 3
               ? <Button variant="primary" loading={busy} onClick={next}>Continue</Button>

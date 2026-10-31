@@ -9,7 +9,8 @@ type Look = { icon: LucideIcon; tone: string };
 /** Built-in category codes (server LOOKUP_SEED). */
 const BY_CODE: Record<string, Look> = {
   Rent: { icon: House, tone: 'bg-brand-50 text-brand-600' },
-  'DEWA/Utilities': { icon: Zap, tone: 'bg-amber-50 text-amber-600' },
+  Utilities: { icon: Zap, tone: 'bg-amber-50 text-amber-600' },
+  'DEWA/Utilities': { icon: Zap, tone: 'bg-amber-50 text-amber-600' }, // older workspaces
   Internet: { icon: Wifi, tone: 'bg-sky-50 text-sky-600' },
   Mobile: { icon: Smartphone, tone: 'bg-cyan-50 text-cyan-700' },
   Grocery: { icon: ShoppingCart, tone: 'bg-emerald-50 text-emerald-600' },
@@ -31,7 +32,7 @@ const BY_CODE: Record<string, Look> = {
 
 /** Workspace-added and custom categories: guess from the name, else a plain tag. */
 const BY_WORD: [RegExp, string][] = [
-  [/rent|house|home|apartment|flat/i, 'Rent'], [/electric|water|dewa|utilit|gas/i, 'DEWA/Utilities'], [/internet|wifi|broadband/i, 'Internet'],
+  [/rent|house|home|apartment|flat/i, 'Rent'], [/electric|water|dewa|utilit|gas/i, 'Utilities'], [/internet|wifi|broadband/i, 'Internet'],
   [/mobile|phone/i, 'Mobile'], [/grocer|supermarket|food/i, 'Grocery'], [/loan|emi/i, 'EMI'], [/car|taxi|uber|transport/i, 'Car Loan'],
   [/card/i, 'Credit Card'], [/family|parent|support/i, 'Family Support'], [/travel|flight|trip|holiday/i, 'Travel'],
   [/fuel|petrol/i, 'Fuel'], [/dining|restaurant|cafe|coffee|eat/i, 'Dining'], [/shop|cloth|amazon/i, 'Shopping'],
