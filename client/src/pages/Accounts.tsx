@@ -31,7 +31,7 @@ function useOwnerOptions(): Option[] {
 
 // ---------------- Add accounts (editable table) ----------------
 
-interface Row { key: number; bank: string; name: string; accountType: string; type: Kind; ownerId: string; accountNumberLast4: string; openingBalance: number | null; openingInvested: number | null }
+interface Row { key: number; bank: string; name: string; accountType: string; type: Kind; ownerId: string; accountNumberLast4: string; openedMonth: string; openingBalance: number | null; openingInvested: number | null }
 
 /** Adds several accounts of one currency at once, e.g. ENBD, RAK and EIB savings. */
 function AddAccounts({ currency, month, onClose, onSaved }: { currency: string; month: string; onClose: () => void; onSaved: () => void }) {
@@ -43,7 +43,7 @@ function AddAccounts({ currency, month, onClose, onSaved }: { currency: string; 
   const firstBank = options('bank').find(bankFilter)?.code ?? '';
   const [seq, setSeq] = useState(1);
   const blank = (key: number): Row => ({
-    key, bank: firstBank, name: '', accountType: 'savings', type: 'personal', ownerId: user!.id, accountNumberLast4: '', openingBalance: null, openingInvested: null,
+    key, bank: firstBank, name: '', accountType: 'savings', type: 'personal', ownerId: user!.id, accountNumberLast4: '', openedMonth: month, openingBalance: null, openingInvested: null,
   });
   const [rows, setRows] = useState<Row[]>([blank(0)]);
   const [addingBankFor, setAddingBankFor] = useState<number | null>(null);
@@ -71,7 +71,7 @@ function AddAccounts({ currency, month, onClose, onSaved }: { currency: string; 
         await api.post('/accounts', {
           name: r.name.trim() || `${bankLabel} ${find('accountType', r.accountType)?.label ?? ''}`.trim(),
           bank: r.bank, currency, accountType: r.accountType, type: r.type, ownerId: r.type === 'personal' ? r.ownerId : null,
-          accountNumberLast4: r.accountNumberLast4, openedMonth: month,
+          accountNumberLast4: r.accountNumberLast4, openedMonth: r.openedMonth,
           openingBalance: r.openingBalance, openingInvested: groupOf(r.accountType) === 'investment' ? r.openingInvested : null,
         });
         done.push(r.key);
@@ -89,9 +89,9 @@ function AddAccounts({ currency, month, onClose, onSaved }: { currency: string; 
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      <p className="text-xs text-stone-500">{currency} accounts starting {monthLabel(month)}. Balance = amount at the end of that month (for loans and cards, the amount outstanding). Leave the name blank to use “Bank + type”.</p>
+      <p className="text-xs text-stone-500">Pick the month each balance is from; the account is tracked from that month. Balance = amount at the end of that month (for loans and cards, the amount outstanding). Leave the name blank to use “Bank + type”.</p>
       <div className="overflow-hidden rounded-md border border-stone-200">
-        <DataTable value={rows} dataKey="key" size="small" scrollable tableStyle={{ minWidth: '64rem' }}>
+        <DataTable value={rows} dataKey="key" size="small" scrollable tableStyle={{ minWidth: '72rem' }}>
           <Column header="#" style={{ width: '2.5rem' }} body={(_r: Row, o) => <span className="text-xs text-stone-400">{o.rowIndex + 1}</span>} />
           <Column header="Bank" style={{ width: '15rem' }} body={(r: Row) => (
             <div className="flex gap-1">
@@ -106,13 +106,14 @@ function AddAccounts({ currency, month, onClose, onSaved }: { currency: string; 
               onChange={(v) => upd(r.key, v === 'common' ? { type: 'common' } : { type: 'personal', ownerId: v })} />
           )} />}
           <Column header="Last 4" style={{ width: '5.5rem' }} body={(r: Row) => <TextInput value={r.accountNumberLast4} onChange={(v) => upd(r.key, { accountNumberLast4: v.replace(/\D/g, '').slice(0, 4) })} inputMode="numeric" />} />
+          <Column header="Balance month" style={{ width: '9rem' }} body={(r: Row) => <MonthInput value={r.openedMonth} onChange={(v) => upd(r.key, { openedMonth: v })} />} />
           <Column header={`Balance (${currency})`} style={{ width: '10rem' }} body={(r: Row) => <NumberInput value={r.openingBalance} onChange={(v) => upd(r.key, { openingBalance: v })} />} />
           <Column header="Invested" style={{ width: '9rem' }} body={(r: Row) => (
             groupOf(r.accountType) === 'investment'
               ? <NumberInput value={r.openingInvested} onChange={(v) => upd(r.key, { openingInvested: v })} min={0} title="Total amount put in so far" />
               : <span className="block text-center text-stone-300">—</span>
           )} />
-          <Column style={{ width: '3rem' }} body={(r: Row) => rows.length > 1 && <IconButton title="Remove row" danger onClick={() => askRemove(r)}><Trash2 className="size-3.5" /></IconButton>} />
+          <Column style={{ width: '3rem' }} body={(r: Row) => (rows.length > 1 ? <IconButton title="Remove row" danger onClick={() => askRemove(r)}><Trash2 className="size-3.5" /></IconButton> : null)} />
         </DataTable>
       </div>
       <Button size="sm" variant="ghost" onClick={addRow} icon={<Plus className="size-3" />}>Add another account</Button>

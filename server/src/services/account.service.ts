@@ -1,3 +1,4 @@
+import type { Types } from 'mongoose';
 import { badRequest, notFound } from '../utils/AppError.js';
 import { round2 } from '../utils/money.js';
 import { addMonths } from '../utils/month.js';
@@ -70,6 +71,20 @@ export async function createAccount(workspaceId: string, userId: string, input: 
   return serialize(doc.toObject(), groups.get(doc.accountType) ?? 'cash');
 }
 
+/**
+ * The balance entered when an account is added is stored in its "tracked from"
+ * month. When that month is changed, the opening balance moves with it, so
+ * the earlier month shows the account's balance. Only done while the opening record
+ * is still the first one and the new month comes before any later record.
+ */
+async function moveOpeningBalance(workspaceId: string, accountId: Types.ObjectId, from: string, to: string) {
+  const [first, second] = await AccountBalance.find({ workspaceId, accountId }).sort({ month: 1 }).limit(2);
+  if (!first || first.month !== from) return;
+  if (second && to >= second.month) return;
+  first.month = to;
+  await first.save();
+}
+
 export async function updateAccount(workspaceId: string, id: string, input: Partial<AccountInput> & { archived?: boolean }) {
   const doc = await Account.findOne({ _id: id, workspaceId });
   if (!doc) throw notFound('Account');
@@ -81,12 +96,14 @@ export async function updateAccount(workspaceId: string, id: string, input: Part
   if (input.currency && input.currency !== doc.currency && (await AccountBalance.exists({ accountId: doc._id }))) {
     throw badRequest('Currency cannot change once balances are recorded. Create a new account instead.');
   }
+  const oldOpened = doc.openedMonth;
   for (const k of ['name', 'bank', 'currency', 'accountType', 'accountNumberLast4', 'openedMonth', 'notes', 'archived'] as const) {
     if (input[k] !== undefined) doc.set(k, input[k]);
   }
   doc.type = merged.type;
   doc.set('ownerId', merged.type === 'personal' ? merged.ownerId : undefined);
   await doc.save();
+  if (doc.openedMonth !== oldOpened) await moveOpeningBalance(workspaceId, doc._id, oldOpened, doc.openedMonth);
   const groups = await groupsByType(workspaceId);
   return serialize(doc.toObject(), groups.get(doc.accountType) ?? 'cash');
 }

@@ -291,4 +291,15 @@ d('API', () => {
     // users can still log in after restore
     await request(app).post('/api/auth/login').send({ email: 'abhi@example.com', password: 'Abhi200@' }).expect(200);
   });
+
+  it('moves the opening balance when an account starts in an earlier month', async () => {
+    const [y, m] = month.split('-').map(Number) as [number, number];
+    const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+    const acc = await request(app).post('/api/accounts').set(auth(tokenS)).send({
+      name: 'RAK savings', bank: 'RAK', currency: 'AED', accountType: 'savings', type: 'personal', ownerId: sajinId, openedMonth: month, openingBalance: 5000,
+    }).expect(201);
+    await request(app).put(`/api/accounts/${acc.body.id}`).set(auth(tokenS)).send({ openedMonth: prev }).expect(200);
+    const b = await request(app).get(`/api/balances?month=${prev}`).set(auth(tokenS)).expect(200);
+    expect(b.body.accounts.find((a: any) => a.id === acc.body.id)).toMatchObject({ closing: 5000, recorded: true });
+  });
 });
