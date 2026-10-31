@@ -12,6 +12,8 @@ type ExpenseInput = {
   date: string; description: string; category: string; customCategory: string; amount: number;
   paidBy: string; type: 'personal' | 'common'; ownerId?: string | null; notes: string; commitmentId?: string | null;
   accountId?: string | null;
+  /** Budget month when it differs from the date's month (next month's commitment paid early). */
+  month?: string;
 };
 
 /** Expenses cannot be recorded in advance: a month opens for expenses on its 1st day. */
@@ -40,7 +42,7 @@ export async function createExpense(workspaceId: string, userId: string, input: 
   return expenseRepository.create({
     workspaceId,
     date: input.date,
-    month: input.date.slice(0, 7),
+    month: input.month ?? input.date.slice(0, 7),
     description: input.description,
     category: input.category,
     customCategory: input.category === 'Custom' ? input.customCategory : '',
@@ -64,6 +66,7 @@ export async function updateExpense(workspaceId: string, id: string, input: Part
   const members = await memberIds(workspaceId);
   if (input.paidBy && !members.includes(input.paidBy)) throw badRequest('paidBy is not a member of this workspace');
   if (input.category && input.category !== doc.category) await assertLookup(workspaceId, 'category', input.category, 'category');
+  const dateChanged = !!input.date && input.date !== doc.date;
   for (const k of ['date', 'description', 'category', 'customCategory', 'paidBy', 'notes'] as const) {
     if (input[k] !== undefined) doc.set(k, input[k]);
   }
@@ -73,7 +76,7 @@ export async function updateExpense(workspaceId: string, id: string, input: Part
   }
   if (input.amount !== undefined) doc.amount = round2(input.amount);
   if (input.type) doc.type = input.type;
-  doc.month = doc.date.slice(0, 7);
+  if (dateChanged) doc.month = doc.date.slice(0, 7); // an early payment keeps its budget month while the date stays
   if (doc.category !== 'Custom') doc.customCategory = '';
   let ownerId: string | null = null;
   if (doc.type === 'personal') {

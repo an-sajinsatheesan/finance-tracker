@@ -348,7 +348,8 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [lastId, setLastId] = useState<string | null>(null);
-  const maxDate = [dateInMonth(month, 31), lastExpenseDate()].sort()[0];
+  const early = month > thisMonth(); // next month's bill paid ahead: dated today, counted in its own month
+  const maxDate = early ? todayStr() : [dateInMonth(month, 31), lastExpenseDate()].sort()[0];
   // Reset the fields whenever a different commitment is opened.
   if (target && target.id !== lastId) {
     setLastId(target.id);
@@ -356,7 +357,7 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
     setAmount(target.amount);
     setAccountId('');
     const due = dateInMonth(month, target.dueDay ?? 1);
-    setDate(todayStr().startsWith(month) ? todayStr() : due <= maxDate ? due : maxDate);
+    setDate(early || todayStr().startsWith(month) ? todayStr() : due <= maxDate ? due : maxDate);
     setError(null);
   }
   const close = () => { setLastId(null); onClose(); };
@@ -384,8 +385,9 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Amount (AED)"><NumberInput value={amount} onChange={setAmount} min={0.01} required /></Field>
-          <Field label="Date paid"><DateInput value={date} min={`${month}-01`} max={maxDate} onChange={setDate} required /></Field>
+          <Field label="Date paid"><DateInput value={date} min={early ? todayStr() : `${month}-01`} max={maxDate} onChange={setDate} required /></Field>
         </div>
+        {early && <p className="rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-900">Paying early: dated today, but counted in {monthLabel(month)}’s budget and shown as paid for {monthLabel(month)}.</p>}
         {isCouple && (
           <Field label="Paid by" hint={target?.type === 'common' ? 'For common bills this decides who owes whom: the other person owes the payer half.' : undefined}>
             <MemberSelect value={paidBy} onChange={setPaidBy} />

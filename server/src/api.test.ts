@@ -148,7 +148,8 @@ d('API', () => {
     }).expect(400);
     expect(r.body.error).toContain('has not started');
     const list = await request(app).get('/api/commitments').set(auth(tokenS));
-    await request(app).post(`/api/commitments/${list.body[0].id}/pay`).set(auth(tokenS)).send({ month: next }).expect(400);
+    const afterNext = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)) + 1, 1)).toISOString().slice(0, 7);
+    await request(app).post(`/api/commitments/${list.body[0].id}/pay`).set(auth(tokenS)).send({ month: afterNext }).expect(400);
   });
 
   it('computes the summary for each scope', async () => {
@@ -311,5 +312,18 @@ d('API', () => {
     expect(w.body.accounts.find((a: any) => a.id === acc.body.id)).toMatchObject({ current: 6000, previous: 5000, recordedThisMonth: false, lastRecordedMonth: prev });
     const s = await request(app).get(`/api/summary?month=${month}&scope=${sajinId}`).set(auth(tokenS)).expect(200);
     expect(s.body.cards.incomePending).toBe(0); // 1000 of 1200 marked received: nothing left pending
+  });
+
+  it('pays next month’s commitment early: dated today, counted in next month', async () => {
+    const next = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 1)).toISOString().slice(0, 7);
+    const c = await request(app).post('/api/commitments').set(auth(tokenS)).send({
+      title: 'Next rent', category: 'Rent', amount: 400, type: 'personal', ownerId: sajinId, startMonth: month, dueDay: 1,
+    }).expect(201);
+    const paid = await request(app).post(`/api/commitments/${c.body.id}/pay`).set(auth(tokenS)).send({ month: next, amount: 300 }).expect(201);
+    expect(paid.body).toMatchObject({ month: next, amount: 300 });
+    expect(paid.body.date.slice(0, 7)).toBe(month);
+    const nextExp = await request(app).get(`/api/expenses?month=${next}`).set(auth(tokenS)).expect(200);
+    expect(nextExp.body.find((e: any) => e.commitmentId === c.body.id)).toBeTruthy();
+    await request(app).post(`/api/commitments/${c.body.id}/pay`).set(auth(tokenS)).send({ month: next }).expect(400); // only once
   });
 });

@@ -1,6 +1,6 @@
 import { badRequest, notFound } from '../utils/AppError.js';
 import { round2 } from '../utils/money.js';
-import { currentMonth, dateInMonth, today } from '../utils/month.js';
+import { addMonths, currentMonth, dateInMonth, today } from '../utils/month.js';
 import { commitmentRepository } from '../repositories/commitment.repository.js';
 import { expenseRepository } from '../repositories/expense.repository.js';
 import { assertMember } from './workspace.service.js';
@@ -146,13 +146,16 @@ export async function payCommitment(
   id: string,
   input: { month: string; date?: string; paidBy?: string; amount?: number; accountId?: string | null },
 ) {
-  assertMonthStarted(input.month);
+  // Next month's bills can be paid early (e.g. rent on the 31st): dated today, counted in their own month.
+  const early = input.month === addMonths(currentMonth(), 1);
+  if (!early) assertMonthStarted(input.month);
   const c = await commitmentRepository.findById(workspaceId, id);
   if (!c) throw notFound('Commitment');
   const existing = await expenseRepository.findForCommitment(workspaceId, id, input.month);
   if (existing) throw badRequest('This commitment is already recorded as paid for that month');
-  const dateStr =
-    input.date && input.date.startsWith(input.month)
+  const dateStr = early
+    ? today()
+    : input.date && input.date.startsWith(input.month)
       ? input.date
       : today().startsWith(input.month) ? today() : dateInMonth(input.month, c.dueDay ?? 1);
   const paidBy = input.paidBy ?? (c.type === 'personal' ? String(c.ownerId) : userId);
@@ -168,5 +171,6 @@ export async function payCommitment(
     notes: '',
     commitmentId: id,
     accountId: input.accountId,
+    month: input.month,
   });
 }

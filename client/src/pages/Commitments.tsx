@@ -7,7 +7,7 @@ import { useMonth } from '../context/MonthContext';
 import { useApi } from '../lib/useApi';
 import { api, errorText } from '../lib/api';
 import type { Commitment, Expense } from '../lib/types';
-import { categoryLabel, money, monthLabel, thisMonth } from '../lib/format';
+import { addMonths, categoryLabel, money, monthLabel, thisMonth } from '../lib/format';
 import {
   Button, Empty, ErrorNote, Field, IconButton, Modal, Money, MonthInput, Page, PageHeader, TableCard, TableSkeleton, Tabs, TypeBadge, confirmAction, usePaging, useToast,
 } from '../components/ui';
@@ -21,7 +21,9 @@ export default function Commitments() {
   const { memberName, workspace, isCouple } = useAuth();
   const toast = useToast();
   const list = useApi<Commitment[]>(`/commitments?month=${month}`);
-  const future = month > thisMonth();
+  // Next month's commitments can be paid early; months after that haven't started.
+  const early = month === addMonths(thisMonth(), 1);
+  const future = month > thisMonth() && !early;
   const expenses = useApi<Expense[]>(future ? null : `/expenses?month=${month}`);
   const [tab, setTab] = useState<Tab>('active');
   const [editing, setEditing] = useState<Commitment | 'new' | null>(null);
@@ -111,7 +113,7 @@ export default function Commitments() {
             !inMonth(c) ? <span className="text-xs text-stone-400">n/a</span>
               : paidIds.has(c.id) ? <span className="inline-flex items-center gap-1 text-xs text-brand-700"><CheckCircle2 className="size-3.5" /> Paid</span>
               : future ? <span className="text-xs text-stone-400">Not started</span>
-              : <Button size="sm" onClick={() => setPaying({ ...c, amount: amountIn(c) })}>Mark paid</Button>
+              : <Button size="sm" onClick={() => setPaying({ ...c, amount: amountIn(c) })} title={early ? `Pay ${monthLabel(month)}’s bill today` : undefined}>{early ? 'Pay early' : 'Mark paid'}</Button>
           )} />
           <Column align="right" style={{ width: '7rem' }} body={(c: Commitment) => (
             <div className="whitespace-nowrap">
