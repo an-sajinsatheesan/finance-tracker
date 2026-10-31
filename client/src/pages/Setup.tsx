@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Steps } from 'primereact/steps';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Check, Mail, Pencil, Plus, Trash2, LogOut, X } from 'lucide-react';
@@ -10,12 +9,43 @@ import { useApi } from '../lib/useApi';
 import type { Commitment, IncomeSource, InviteResult, Member } from '../lib/types';
 import { addMonths, categoryLabel, monthLabel, thisMonth } from '../lib/format';
 import {
-  Badge, Button, ErrorNote, Field, IconButton, Modal, Money, MonthInput, NumberInput, Select, TextInput, TypeBadge, confirmAction, useToast,
+  Badge, Button, ErrorNote, Field, IconButton, Logo, Modal, Money, MonthInput, NumberInput, Select, TextInput, TypeBadge, confirmAction, cx, useToast,
 } from '../components/ui';
 import { CommitmentForm, LookupSelect, PAY_TIMING_OPTIONS } from '../components/forms';
 import { CategoryIcon } from '../components/CategoryIcon';
 
-const STEPS = ['Workspace', 'Income', 'Commitments', 'Review'];
+const STEPS = [
+  { label: 'Workspace', hint: 'Name your workspace and check who is in it.' },
+  { label: 'Income', hint: 'What each person expects to earn every month.' },
+  { label: 'Commitments', hint: 'Rent, EMIs and bills that repeat every month.' },
+  { label: 'Review', hint: 'Pick your first month and check the plan.' },
+];
+
+/** Step tiles in the dashboard's card style: done (green check), current (tinted), upcoming (plain). */
+function Stepper({ step }: { step: number }) {
+  return (
+    <ol className="mb-5 grid grid-cols-4 gap-2 sm:gap-3">
+      {STEPS.map((s, i) => {
+        const done = i < step;
+        const current = i === step;
+        return (
+          <li
+            key={s.label}
+            aria-current={current ? 'step' : undefined}
+            className={cx('flex min-w-0 items-center gap-2.5 rounded-2xl border p-2.5 sm:p-3',
+              current ? 'border-brand-200 bg-linear-to-br from-white to-brand-50 shadow-[0_1px_2px_rgba(22,25,37,0.04)]' : 'border-stone-200 bg-white')}
+          >
+            <span className={cx('num flex size-8 shrink-0 items-center justify-center rounded-lg border text-xs font-semibold',
+              done ? 'border-emerald-200 bg-emerald-50 text-emerald-600' : current ? 'border-brand-200 bg-white text-brand-700' : 'border-stone-200 bg-white text-stone-400')}>
+              {done ? <Check className="size-4" /> : i + 1}
+            </span>
+            <span className={cx('hidden min-w-0 truncate text-sm sm:block', current ? 'font-semibold text-stone-900' : 'font-medium text-stone-500')}>{s.label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 function share(amount: number, n: number, i: number) {
   const fils = Math.round(amount * 100);
@@ -125,26 +155,46 @@ export default function Setup() {
   }, [members, active, startMonth]);
 
   return (
-    <div className="h-dvh overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Set up your workspace</h1>
-            <p className="text-xs text-stone-500">Four quick steps. Everything can be changed later.</p>
+    <div className="scroll-thin h-dvh overflow-y-auto">
+      <header className="sticky top-0 z-30 border-b border-stone-200 bg-white">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-2.5 md:px-6">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Logo />
+            <div className="min-w-0">
+              <div className="truncate text-[15px] font-bold tracking-tight">{workspace?.name || 'Household Finance'}</div>
+              <div className="text-[11px] text-stone-500">Workspace setup</div>
+            </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={logout} icon={<LogOut className="size-3.5" />}>Sign out</Button>
+          <button onClick={logout} className="flex h-10 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium text-stone-600 hover:bg-stone-50">
+            <LogOut className="size-4" /> Sign out
+          </button>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-4xl px-4 py-6 md:px-6">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Set up your workspace</h1>
+            <p className="mt-0.5 text-xs text-stone-500">Four quick steps. Everything can be changed later.</p>
+          </div>
+          <Badge tone="brand">Step {step + 1} of {STEPS.length}</Badge>
         </div>
         <InviteNotice />
 
-        <Steps model={STEPS.map((label) => ({ label }))} activeIndex={step} readOnly className="mb-6" />
+        <Stepper step={step} />
 
-        <div className="card p-5">
+        <div className="card overflow-hidden">
+          <div className="border-b border-stone-200 px-5 py-3.5">
+            <h2 className="text-sm font-semibold text-stone-800">{STEPS[step]!.label}</h2>
+            <p className="text-xs text-stone-500">{STEPS[step]!.hint}</p>
+          </div>
+          <div className="p-5">
           {step === 0 && (
             <div className="space-y-4">
               <Field label="Workspace name"><TextInput value={name} onChange={setName} /></Field>
               <div className="grid gap-3 sm:grid-cols-2">
                 {members.map((m, i) => (
-                  <div key={m.userId} className="space-y-3 rounded-md border border-stone-200 p-3">
+                  <div key={m.userId} className="space-y-3 rounded-xl border border-stone-200 p-3">
                     {m.status === 'invited' && <Badge tone="amber">Invitation pending{m.email ? ` · ${m.email}` : ''}</Badge>}
                     <Field label="Display name"><TextInput value={m.displayName} onChange={(v) => updateMember(i, { displayName: v })} /></Field>
                     <Field label="Relationship"><LookupSelect type="relationship" value={m.relationship} onChange={(v) => updateMember(i, { relationship: v })} showClear /></Field>
@@ -159,7 +209,7 @@ export default function Setup() {
               <p className="text-xs text-stone-500">Monthly income each person expects. A month's expected income is created from these, and you mark it as received on the Income screen.</p>
               <p className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-900">Salary credited on the last working day and spent the following month? Set <b>Paid</b> to <b>End of previous month</b>: e.g. the salary received on 28 Oct then counts as November’s income. Use pay day <b>31</b> for “last day of the month”.</p>
               {members.map((m, i) => (
-                <div key={m.userId} className="overflow-hidden rounded-md border border-stone-200">
+                <div key={m.userId} className="overflow-hidden rounded-xl border border-stone-200">
                   <div className="flex items-center justify-between border-b border-stone-200 px-3 py-2">
                     <span className="text-sm font-medium">{m.displayName}</span>
                     <Money className="text-sm font-semibold" value={m.incomeSources.filter((s) => s.active).reduce((a, s) => a + Number(s.amount || 0), 0)} />
@@ -192,7 +242,7 @@ export default function Setup() {
                 <p className="text-xs text-stone-500">Planned monthly payments (rent, EMIs, bills). They repeat every month automatically.{isCouple && ' Common ones are split 50/50.'} These are plans, not recorded expenses.</p>
                 <Button size="sm" variant="primary" onClick={() => setEditing('new')} icon={<Plus className="size-3.5" />}>Add</Button>
               </div>
-              <div className="overflow-hidden rounded-md border border-stone-200">
+              <div className="overflow-hidden rounded-xl border border-stone-200">
                 <DataTable value={commitments.data ?? []} dataKey="id" size="small" loading={commitments.loading && !commitments.data} emptyMessage={<p className="py-4 text-center text-xs text-stone-500">No commitments yet.</p>}>
                   <Column header="Commitment" body={(c: Commitment) => <div className="flex items-center gap-3"><CategoryIcon category={c.category} custom={c.customCategory} /><div><div className="font-medium">{c.title}</div><div className="text-[11px] text-stone-500">{categoryLabel(c.category, c.customCategory)} · due day {c.dueDay}</div></div></div>} />
                   {isCouple && <Column header="Type" body={(c: Commitment) => <div className="flex items-center gap-1.5"><TypeBadge type={c.type} />{c.type === 'personal' && <span className="text-xs text-stone-500">{members.find((m) => m.userId === c.ownerId)?.displayName}</span>}</div>} />}
@@ -225,7 +275,7 @@ export default function Setup() {
               )}
               <div className="grid gap-3 sm:grid-cols-2">
                 {review.map((r) => (
-                  <div key={r.m.userId} className="rounded-md border border-stone-200 p-3">
+                  <div key={r.m.userId} className="rounded-2xl border border-brand-100 bg-linear-to-br from-white to-brand-50 p-4">
                     <div className="mb-2 flex items-center justify-between"><span className="font-medium">{r.m.displayName}</span><Badge>{monthLabel(startMonth)}</Badge></div>
                     <dl className="space-y-1 text-sm">
                       <div className="flex justify-between"><dt className="text-stone-500">Expected income</dt><dd><Money value={r.income} /></dd></div>
@@ -240,14 +290,13 @@ export default function Setup() {
             </div>
           )}
 
-          <div className="mt-5 space-y-3">
-            <ErrorNote message={error} />
-            <div className="flex justify-between">
-              <Button disabled={step === 0} onClick={() => setStep((s) => s - 1)}>Back</Button>
-              {step < 3
-                ? <Button variant="primary" loading={busy} onClick={next}>Continue</Button>
-                : <Button variant="primary" loading={busy} onClick={finish} icon={<Check className="size-3.5" />}>Confirm & start</Button>}
-            </div>
+            {error && <div className="mt-5"><ErrorNote message={error} /></div>}
+          </div>
+          <div className="flex justify-between border-t border-stone-200 bg-stone-50 px-5 py-3">
+            <Button disabled={step === 0} onClick={() => setStep((s) => s - 1)}>Back</Button>
+            {step < 3
+              ? <Button variant="primary" loading={busy} onClick={next}>Continue</Button>
+              : <Button variant="primary" loading={busy} onClick={finish} icon={<Check className="size-3.5" />}>Confirm & start</Button>}
           </div>
         </div>
       </div>

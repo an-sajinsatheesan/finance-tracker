@@ -56,9 +56,9 @@ export default function AcceptInvite() {
 
   return (
     <AuthShell>
-      <div className="rounded-xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8 lg:border-0 lg:p-0 lg:shadow-none">
+      <div>
         <div className="mb-6 flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-full bg-violet-100 text-violet-700"><Heart className="size-5" /></div>
+          <div className="flex size-10 items-center justify-center rounded-xl border border-violet-200 bg-linear-to-br from-white to-violet-50 text-violet-500"><Heart className="size-5" /></div>
           <div>
             <h2 className="text-xl font-semibold tracking-tight">You’re invited</h2>
             <p className="text-sm text-stone-500">Join a shared household workspace</p>
@@ -73,7 +73,7 @@ export default function AcceptInvite() {
         )}
         {info && (
           <form onSubmit={submit} noValidate className="space-y-4">
-            <p className="rounded-lg bg-stone-50 px-3 py-2.5 text-sm text-stone-600">
+            <p className="rounded-xl border border-brand-100 bg-linear-to-br from-white to-brand-50 px-3 py-2.5 text-sm text-stone-600">
               <b>{info.invitedBy}</b> invited you to <b>{info.workspaceName}</b>. Choose a password to finish.
             </p>
             {alert && <Message severity="error" text={alert} className="w-full justify-start" />}
