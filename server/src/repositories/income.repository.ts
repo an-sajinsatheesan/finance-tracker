@@ -11,16 +11,31 @@ export const incomeRepository = {
   findById: (workspaceId: Id, id: Id) => Income.findOne({ _id: id, workspaceId }),
   create: (data: Record<string, unknown>) => Income.create(data),
   insertMany: (docs: Record<string, unknown>[]) => Income.insertMany(docs),
-  /** Returns true if this call claimed the month (first time it is generated). */
-  async claimMonth(workspaceId: Id, month: string): Promise<boolean> {
-    const exists = await IncomeMonth.exists({ workspaceId, month });
-    if (exists) return false;
+  updateExpected: (id: Id, set: Record<string, unknown>) => Income.updateOne({ _id: id, status: 'expected' }, { $set: set }),
+  isMonthGenerated: async (workspaceId: Id, month: string) => !!(await IncomeMonth.exists({ workspaceId, month })),
+  markMonthGenerated: (workspaceId: Id, month: string) =>
+    IncomeMonth.updateOne({ workspaceId, month }, { $setOnInsert: { workspaceId, month } }, { upsert: true }).catch((err) => {
+      if ((err as { code?: number }).code !== 11000) throw err; // a concurrent request marked it first
+    }),
+  /**
+   * Inserts generated rows unless they already exist (keyed by member + source).
+   * Safe to run concurrently: duplicates are rejected by the unique index.
+   */
+  async insertGenerated(docs: Record<string, any>[]) {
+    if (!docs.length) return;
     try {
-      await IncomeMonth.create({ workspaceId, month });
-      return true;
-    } catch (err: unknown) {
-      if ((err as { code?: number }).code === 11000) return false; // another request won the race
-      throw err;
+      await Income.bulkWrite(
+        docs.map((d) => ({
+          updateOne: {
+            filter: { workspaceId: d.workspaceId, month: d.month, userId: d.userId, sourceKey: d.sourceKey },
+            update: { $setOnInsert: d },
+            upsert: true,
+          },
+        })),
+        { ordered: false },
+      );
+    } catch (err) {
+      if ((err as { code?: number }).code !== 11000) throw err;
     }
   },
 };

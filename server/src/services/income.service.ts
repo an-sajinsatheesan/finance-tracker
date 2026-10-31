@@ -2,6 +2,8 @@ import { notFound } from '../utils/AppError.js';
 import { round2 } from '../utils/money.js';
 import { incomeRepository } from '../repositories/income.repository.js';
 import { assertMember, ensureMonthIncome } from './workspace.service.js';
+import { assertLookup } from './lookup.service.js';
+import { assertAccount } from './account.service.js';
 
 type IncomeInput = {
   userId?: string;
@@ -13,6 +15,7 @@ type IncomeInput = {
   receivedDate?: string;
   status?: 'expected' | 'partial' | 'received';
   notes?: string;
+  accountId?: string | null;
 };
 
 /** Status follows the amounts unless set explicitly. */
@@ -29,6 +32,8 @@ export async function listIncome(workspaceId: string, month: string) {
 
 export async function createIncome(workspaceId: string, input: Required<Pick<IncomeInput, 'userId' | 'month' | 'source' | 'expectedAmount'>> & IncomeInput) {
   await assertMember(workspaceId, input.userId, 'userId');
+  await assertLookup(workspaceId, 'incomeSource', input.source, 'income source');
+  await assertAccount(workspaceId, input.accountId);
   const received = round2(input.receivedAmount ?? 0);
   return incomeRepository.create({
     workspaceId,
@@ -41,6 +46,7 @@ export async function createIncome(workspaceId: string, input: Required<Pick<Inc
     receivedDate: input.receivedDate || undefined,
     status: input.status ?? deriveIncomeStatus(input.expectedAmount, received),
     notes: input.notes ?? '',
+    accountId: input.accountId || undefined,
   });
 }
 
@@ -48,10 +54,12 @@ export async function updateIncome(workspaceId: string, id: string, input: Incom
   const doc = await incomeRepository.findById(workspaceId, id);
   if (!doc) throw notFound('Income');
   if (input.userId) await assertMember(workspaceId, input.userId, 'userId');
+  if (input.source && input.source !== doc.source) await assertLookup(workspaceId, 'incomeSource', input.source, 'income source');
+  await assertAccount(workspaceId, input.accountId);
   const { status, ...rest } = input;
   for (const [k, v] of Object.entries(rest)) {
     if (v === undefined) continue;
-    doc.set(k, typeof v === 'number' ? round2(v) : v === '' && k.endsWith('Date') ? undefined : v);
+    doc.set(k, typeof v === 'number' ? round2(v) : v === null || (v === '' && k.endsWith('Date')) ? undefined : v);
   }
   if (doc.status !== 'archived') {
     doc.status = status ?? deriveIncomeStatus(doc.expectedAmount, doc.receivedAmount ?? 0);

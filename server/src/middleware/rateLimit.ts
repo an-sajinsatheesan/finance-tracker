@@ -1,11 +1,11 @@
 import type { RequestHandler } from 'express';
 import { AppError } from '../utils/AppError.js';
 
-/** Small in-memory limiter for the login route (best effort; per instance). */
+/** Small in-memory limiter for the public auth routes (best effort; per instance). */
 export function rateLimit(max: number, windowMs: number): RequestHandler {
   const hits = new Map<string, { count: number; reset: number }>();
   return (req, _res, next) => {
-    const key = `${req.ip}:${String(req.body?.username ?? '').toLowerCase()}`;
+    const key = `${req.path}:${req.ip}:${String(req.body?.email ?? '').toLowerCase()}`;
     const now = Date.now();
     const entry = hits.get(key);
     if (!entry || entry.reset < now) {

@@ -32,7 +32,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
   if (!res.ok) {
-    if (res.status === 401 && path !== '/auth/login') onUnauthorized?.();
+    if (res.status === 401 && !path.startsWith('/auth/') && !path.startsWith('/invitations/')) onUnauthorized?.();
     throw new ApiError(res.status, data?.error ?? `Request failed (${res.status})`, data?.details);
   }
   return data as T;
@@ -56,4 +56,5 @@ export const api = {
   get: <T>(p: string) => request<T>('GET', p),
   post: <T>(p: string, b?: unknown) => request<T>('POST', p, b ?? {}),
   put: <T>(p: string, b: unknown) => request<T>('PUT', p, b),
+  del: <T>(p: string) => request<T>('DELETE', p),
 };

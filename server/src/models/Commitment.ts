@@ -21,6 +21,8 @@ const commitmentSchema = new Schema(
     startMonth: { type: String, required: true },
     endMonth: { type: String, default: null },
     dueDay: { type: Number, min: 1, max: 31, default: 1 },
+    /** Remind this many days before the due day; null turns reminders off. */
+    reminderDaysBefore: { type: Number, min: 0, max: 15, default: 3 },
     notes: { type: String, default: '' },
     archived: { type: Boolean, default: false },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },

@@ -14,4 +14,9 @@ export const expenseRepository = {
   findForCommitment: (workspaceId: Id, commitmentId: Id, month: string) =>
     Expense.findOne({ workspaceId, commitmentId, month, status: 'active' }).lean(),
   create: (data: Record<string, unknown>) => Expense.create(data),
+  async unlinkCommitment(workspaceId: Id, commitmentId: Id) {
+    const r = await Expense.updateMany({ workspaceId, commitmentId }, { $unset: { commitmentId: 1 } });
+    return r.modifiedCount;
+  },
+  listActiveByMonth: (workspaceId: Id, month: string) => Expense.find({ workspaceId, month, status: 'active' }).lean(),
 };

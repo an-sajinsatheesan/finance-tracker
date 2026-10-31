@@ -14,11 +14,18 @@ const incomeSchema = new Schema(
     expectedDate: { type: String },
     receivedDate: { type: String },
     status: { type: String, enum: INCOME_STATUSES, default: 'expected' },
+    /** Bank account the money was paid into (optional); feeds the calculated balances. */
+    accountId: { type: Schema.Types.ObjectId, ref: 'Account' },
     notes: { type: String, default: '' },
   },
   { timestamps: true },
 );
 incomeSchema.index({ workspaceId: 1, month: 1 });
+/** A recurring source generates at most one row per member per month. */
+incomeSchema.index(
+  { workspaceId: 1, month: 1, userId: 1, sourceKey: 1 },
+  { unique: true, partialFilterExpression: { sourceKey: { $type: 'string' } } },
+);
 
 export type IncomeDoc = InferSchemaType<typeof incomeSchema> & { _id: Types.ObjectId };
 export const Income = model('Income', incomeSchema);

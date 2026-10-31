@@ -21,6 +21,9 @@ export async function reactivate(req: Request, res: Response) {
 export async function archive(req: Request, res: Response) {
   res.json(await svc.archiveCommitment(authUser(req).workspaceId, req.params.id));
 }
+export async function remove(req: Request, res: Response) {
+  res.json(await svc.deleteCommitment(authUser(req).workspaceId, req.params.id));
+}
 export async function pay(req: Request, res: Response) {
   const u = authUser(req);
   res.status(201).json(await svc.payCommitment(u.workspaceId, u.id, req.params.id, req.body));

@@ -5,3 +5,6 @@ export * from './Commitment.js';
 export * from './Expense.js';
 export * from './Goal.js';
 export * from './Backup.js';
+export * from './Lookup.js';
+export * from './Account.js';
+export * from './Invitation.js';

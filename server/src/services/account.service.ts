@@ -1,0 +1,224 @@
+import { badRequest, notFound } from '../utils/AppError.js';
+import { round2 } from '../utils/money.js';
+import { addMonths } from '../utils/month.js';
+import { ACCOUNT_GROUPS, type AccountGroup } from '../utils/lookups.js';
+import { Account, AccountBalance, Expense, Income, Lookup, Transfer } from '../models/index.js';
+import { assertMember, ensureMonthIncome, getWorkspace } from './workspace.service.js';
+import { assertLookup } from './lookup.service.js';
+import { computeWealth, type AccountRow } from './wealth.logic.js';
+import { computeBalances } from './balances.logic.js';
+
+type AccountInput = {
+  name: string; bank: string; currency: string; accountType: string; type: 'personal' | 'common';
+  ownerId?: string | null; accountNumberLast4?: string; openedMonth: string; notes?: string;
+  openingBalance?: number | null; openingInvested?: number | null;
+};
+
+/** accountType code → group (cash / deposit / investment / liability) from the Lookup table. */
+async function groupsByType(workspaceId: string): Promise<Map<string, AccountGroup>> {
+  const rows = await Lookup.find({ type: 'accountType', $or: [{ workspaceId: null }, { workspaceId }] }).lean();
+  return new Map(rows.map((r) => {
+    const g = (r.meta as { group?: string } | undefined)?.group;
+    return [r.code, (ACCOUNT_GROUPS as readonly string[]).includes(g ?? '') ? (g as AccountGroup) : 'cash'];
+  }));
+}
+
+const serialize = (a: any, group: AccountGroup) => ({
+  id: String(a._id), name: a.name, bank: a.bank, currency: a.currency, accountType: a.accountType, group,
+  type: a.type, ownerId: a.ownerId ? String(a.ownerId) : null, accountNumberLast4: a.accountNumberLast4 ?? '',
+  openedMonth: a.openedMonth, notes: a.notes ?? '', archived: !!a.archived,
+});
+
+async function validate(workspaceId: string, input: Partial<AccountInput>) {
+  await assertLookup(workspaceId, 'bank', input.bank, 'bank');
+  await assertLookup(workspaceId, 'currency', input.currency, 'currency');
+  await assertLookup(workspaceId, 'accountType', input.accountType, 'account type');
+  if (input.type === 'personal') {
+    if (!input.ownerId) throw badRequest('Personal accounts need an owner');
+    await assertMember(workspaceId, input.ownerId, 'ownerId');
+  }
+}
+
+/** An income or expense may only point at an account of this workspace. */
+export async function assertAccount(workspaceId: string, accountId: string | null | undefined) {
+  if (!accountId) return;
+  if (!(await Account.exists({ _id: accountId, workspaceId }))) throw badRequest('Unknown account');
+}
+
+export async function listAccounts(workspaceId: string, includeArchived = false) {
+  const [docs, groups] = await Promise.all([
+    Account.find({ workspaceId, ...(includeArchived ? {} : { archived: false }) }).sort({ currency: 1, name: 1 }).lean(),
+    groupsByType(workspaceId),
+  ]);
+  return docs.map((a) => serialize(a, groups.get(a.accountType) ?? 'cash'));
+}
+
+export async function createAccount(workspaceId: string, userId: string, input: AccountInput) {
+  await validate(workspaceId, input);
+  const doc = await Account.create({
+    workspaceId, name: input.name, bank: input.bank, currency: input.currency, accountType: input.accountType,
+    type: input.type, ownerId: input.type === 'personal' ? input.ownerId : undefined,
+    accountNumberLast4: input.accountNumberLast4 ?? '', openedMonth: input.openedMonth, notes: input.notes ?? '', createdBy: userId,
+  });
+  if (input.openingBalance !== undefined && input.openingBalance !== null) {
+    await AccountBalance.create({
+      workspaceId, accountId: doc._id, month: input.openedMonth, balance: round2(input.openingBalance),
+      invested: input.openingInvested ?? null, updatedBy: userId,
+    });
+  }
+  const groups = await groupsByType(workspaceId);
+  return serialize(doc.toObject(), groups.get(doc.accountType) ?? 'cash');
+}
+
+export async function updateAccount(workspaceId: string, id: string, input: Partial<AccountInput> & { archived?: boolean }) {
+  const doc = await Account.findOne({ _id: id, workspaceId });
+  if (!doc) throw notFound('Account');
+  const merged = {
+    bank: input.bank ?? doc.bank, currency: input.currency ?? doc.currency, accountType: input.accountType ?? doc.accountType,
+    type: input.type ?? doc.type, ownerId: input.ownerId !== undefined ? input.ownerId : doc.ownerId ? String(doc.ownerId) : null,
+  };
+  await validate(workspaceId, merged);
+  if (input.currency && input.currency !== doc.currency && (await AccountBalance.exists({ accountId: doc._id }))) {
+    throw badRequest('Currency cannot change once balances are recorded. Create a new account instead.');
+  }
+  for (const k of ['name', 'bank', 'currency', 'accountType', 'accountNumberLast4', 'openedMonth', 'notes', 'archived'] as const) {
+    if (input[k] !== undefined) doc.set(k, input[k]);
+  }
+  doc.type = merged.type;
+  doc.set('ownerId', merged.type === 'personal' ? merged.ownerId : undefined);
+  await doc.save();
+  const groups = await groupsByType(workspaceId);
+  return serialize(doc.toObject(), groups.get(doc.accountType) ?? 'cash');
+}
+
+/**
+ * Saves month-end balances for several accounts at once (the "update balances"
+ * dialog). `balance: null` removes that month's record so it carries forward again.
+ */
+export async function saveBalances(
+  workspaceId: string, userId: string, month: string,
+  items: { accountId: string; balance: number | null; invested?: number | null; note?: string }[],
+) {
+  const ids = items.map((i) => i.accountId);
+  const owned = await Account.find({ workspaceId, _id: { $in: ids } }).select('_id openedMonth').lean();
+  if (owned.length !== new Set(ids).size) throw badRequest('Unknown account');
+  for (const i of items) {
+    const a = owned.find((o) => String(o._id) === i.accountId)!;
+    if (month < a.openedMonth) throw badRequest(`Balance month is before the account was opened (${a.openedMonth})`);
+    if (i.balance === null) {
+      await AccountBalance.deleteOne({ workspaceId, accountId: i.accountId, month });
+      continue;
+    }
+    await AccountBalance.updateOne(
+      { workspaceId, accountId: i.accountId, month },
+      { $set: { balance: round2(i.balance), invested: i.invested ?? null, note: i.note ?? '', updatedBy: userId } },
+      { upsert: true },
+    );
+  }
+  return { saved: items.length };
+}
+
+export async function balanceHistory(workspaceId: string, accountId: string) {
+  return AccountBalance.find({ workspaceId, accountId }).sort({ month: -1 }).lean();
+}
+
+// ---------- Transfers ----------
+
+export async function listTransfers(workspaceId: string, month: string) {
+  return Transfer.find({ workspaceId, month, status: 'active' }).sort({ date: -1, createdAt: -1 }).lean();
+}
+
+export async function createTransfer(
+  workspaceId: string, userId: string,
+  input: { date: string; fromAccountId: string; toAccountId: string; amount: number; toAmount?: number | null; fee?: number; note?: string },
+) {
+  if (input.fromAccountId === input.toAccountId) throw badRequest('Choose two different accounts');
+  const [from, to] = await Promise.all([
+    Account.findOne({ _id: input.fromAccountId, workspaceId }).lean(),
+    Account.findOne({ _id: input.toAccountId, workspaceId }).lean(),
+  ]);
+  if (!from || !to) throw badRequest('Unknown account');
+  const toAmount = input.toAmount ?? (from.currency === to.currency ? input.amount : null);
+  if (!toAmount) throw badRequest(`Enter the amount received in ${to.currency}`);
+  return Transfer.create({
+    workspaceId, date: input.date, month: input.date.slice(0, 7), fromAccountId: from._id, toAccountId: to._id,
+    amount: round2(input.amount), toAmount: round2(toAmount), fee: round2(input.fee ?? 0), note: input.note ?? '', createdBy: userId,
+  });
+}
+
+export async function archiveTransfer(workspaceId: string, id: string) {
+  const doc = await Transfer.findOne({ _id: id, workspaceId });
+  if (!doc) throw notFound('Transfer');
+  doc.status = 'archived';
+  await doc.save();
+  return { id, archived: true };
+}
+
+// ---------- Wealth ----------
+
+const TREND_MONTHS = 12;
+
+/** scope: 'all' (household), 'common' (joint accounts) or a member id (their own accounts). */
+export async function getWealth(workspaceId: string, month: string, scope = 'all') {
+  const ws = await getWorkspace(workspaceId);
+  if (scope !== 'all' && scope !== 'common') await assertMember(workspaceId, scope, 'scope');
+  const accounts = (await listAccounts(workspaceId)).filter((a) =>
+    scope === 'all' ? true : scope === 'common' ? a.type === 'common' : a.ownerId === scope,
+  );
+  const ids = accounts.map((a) => a.id);
+  const first = addMonths(month, -TREND_MONTHS);
+  const [balances, transfers] = await Promise.all([
+    AccountBalance.find({ workspaceId, accountId: { $in: ids }, month: { $lte: month } }).lean(),
+    Transfer.find({ workspaceId, status: 'active', month: { $gt: first, $lte: month } }).lean(),
+  ]);
+  const idSet = new Set(ids);
+  const fx = ws.fxRates instanceof Map ? Object.fromEntries(ws.fxRates) : { ...(ws.fxRates ?? {}) };
+  return computeWealth({
+    accounts: accounts as AccountRow[],
+    balances: balances.map((b) => ({ accountId: String(b.accountId), month: b.month, balance: b.balance, invested: b.invested })),
+    transfers: transfers
+      .filter((t) => idSet.has(String(t.fromAccountId)) && idSet.has(String(t.toAccountId)))
+      .map((t) => ({ month: t.month, date: t.date, fromAccountId: String(t.fromAccountId), toAccountId: String(t.toAccountId), amount: t.amount, toAmount: t.toAmount, fee: t.fee })),
+    month, base: ws.currency ?? 'AED', fx: fx as Record<string, number>, trendMonths: TREND_MONTHS,
+  });
+}
+
+// ---------- Calculated balances & savings ----------
+
+/** Account balances moved by the income, expenses and transfers linked to them, plus monthly savings per person. */
+export async function getBalances(workspaceId: string, month: string) {
+  const ws = await getWorkspace(workspaceId);
+  await ensureMonthIncome(workspaceId, month);
+  const accounts = await listAccounts(workspaceId);
+  const ids = accounts.map((a) => a.id);
+  // Income for next month's budget can already be in the bank (paid at the end of this month).
+  const [snapshots, incomes, expenses, transfers] = await Promise.all([
+    AccountBalance.find({ workspaceId, accountId: { $in: ids }, month: { $lte: month } }).lean(),
+    Income.find({ workspaceId, month: { $lte: addMonths(month, 1) }, status: { $ne: 'archived' } }).lean(),
+    Expense.find({ workspaceId, month: { $lte: month }, status: 'active' }).lean(),
+    Transfer.find({ workspaceId, status: 'active', month: { $lte: month } }).lean(),
+  ]);
+  const fx = ws.fxRates instanceof Map ? Object.fromEntries(ws.fxRates) : { ...(ws.fxRates ?? {}) };
+  const idSet = new Set(ids);
+  const linked = (id: unknown) => (id && idSet.has(String(id)) ? String(id) : null);
+  return computeBalances({
+    accounts: accounts as AccountRow[],
+    snapshots: snapshots.map((s) => ({ accountId: String(s.accountId), month: s.month, balance: s.balance })),
+    incomes: incomes.map((i) => ({
+      userId: String(i.userId), month: i.month, receivedDate: i.receivedDate ?? null, receivedAmount: i.receivedAmount ?? 0,
+      status: i.status, accountId: linked(i.accountId),
+    })),
+    expenses: expenses.map((e) => ({
+      month: e.month, amount: e.amount, accountId: linked(e.accountId),
+      shares: e.shares.map((s) => ({ userId: String(s.userId), amount: s.amount })),
+    })),
+    transfers: transfers
+      .filter((t) => idSet.has(String(t.fromAccountId)) && idSet.has(String(t.toAccountId)))
+      .map((t) => ({ month: t.month, fromAccountId: String(t.fromAccountId), toAccountId: String(t.toAccountId), amount: t.amount, toAmount: t.toAmount, fee: t.fee ?? 0 })),
+    memberIds: ws.members.map((m) => String(m.userId)),
+    month,
+    startMonth: ws.startMonth,
+    base: ws.currency ?? 'AED',
+    fx: fx as Record<string, number>,
+  });
+}

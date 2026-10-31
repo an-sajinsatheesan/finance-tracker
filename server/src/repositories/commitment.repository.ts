@@ -15,4 +15,5 @@ export const commitmentRepository = {
     }).lean(),
   findById: (workspaceId: Id, id: Id) => Commitment.findOne({ _id: id, workspaceId }),
   create: (data: Record<string, unknown>) => Commitment.create(data),
+  delete: (workspaceId: Id, id: Id) => Commitment.deleteOne({ _id: id, workspaceId }),
 };

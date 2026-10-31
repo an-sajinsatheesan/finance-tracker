@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import { env } from './config/env.js';
 import { connectDB } from './config/db.js';
 import { router } from './routes/index.js';
+import { ensureLookupsOnce } from './services/lookup.service.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 export function createApp() {
@@ -25,6 +26,7 @@ export function createApp() {
   app.use(async (_req, _res, next) => {
     try {
       await connectDB();
+      await ensureLookupsOnce(); // enum rows must exist before anything validates against them
       next();
     } catch (err) {
       next(err);

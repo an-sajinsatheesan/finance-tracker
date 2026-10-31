@@ -1,25 +1,37 @@
 import { badRequest, notFound } from '../utils/AppError.js';
 import { round2 } from '../utils/money.js';
+import { currentMonth } from '../utils/month.js';
 import { expenseRepository } from '../repositories/expense.repository.js';
 import { commitmentRepository } from '../repositories/commitment.repository.js';
 import { assertMember, memberIds } from './workspace.service.js';
 import { buildShares } from './expense.logic.js';
+import { assertLookup } from './lookup.service.js';
+import { assertAccount } from './account.service.js';
 
 type ExpenseInput = {
   date: string; description: string; category: string; customCategory: string; amount: number;
   paidBy: string; type: 'personal' | 'common'; ownerId?: string | null; notes: string; commitmentId?: string | null;
+  accountId?: string | null;
 };
+
+/** Expenses cannot be recorded in advance: a month opens for expenses on its 1st day. */
+export function assertMonthStarted(month: string) {
+  if (month > currentMonth()) throw badRequest(`${month} has not started yet. Expenses can be added from the 1st of the month.`);
+}
 
 export async function listExpenses(workspaceId: string, month: string, includeArchived = false) {
   return expenseRepository.listByMonth(workspaceId, month, includeArchived);
 }
 
 export async function createExpense(workspaceId: string, userId: string, input: ExpenseInput) {
+  assertMonthStarted(input.date.slice(0, 7));
   const members = await memberIds(workspaceId);
   if (!members.includes(input.paidBy)) throw badRequest('paidBy is not a member of this workspace');
   // A personal expense belongs to its owner (defaults to whoever paid).
   const ownerId = input.type === 'personal' ? input.ownerId || input.paidBy : null;
   if (ownerId) await assertMember(workspaceId, ownerId, 'ownerId');
+  await assertLookup(workspaceId, 'category', input.category, 'category');
+  await assertAccount(workspaceId, input.accountId);
   if (input.commitmentId) {
     const c = await commitmentRepository.findById(workspaceId, input.commitmentId);
     if (!c) throw badRequest('Unknown commitment');
@@ -38,6 +50,7 @@ export async function createExpense(workspaceId: string, userId: string, input: 
     ownerId: ownerId ?? undefined,
     shares: buildShares(input.type, amount, members, ownerId),
     commitmentId: input.commitmentId ?? undefined,
+    accountId: input.accountId || undefined,
     notes: input.notes ?? '',
     createdBy: userId,
   });
@@ -47,10 +60,16 @@ export async function updateExpense(workspaceId: string, id: string, input: Part
   const doc = await expenseRepository.findById(workspaceId, id);
   if (!doc) throw notFound('Expense');
   if (doc.status === 'archived') throw badRequest('Restore the expense before editing it');
+  if (input.date) assertMonthStarted(input.date.slice(0, 7));
   const members = await memberIds(workspaceId);
   if (input.paidBy && !members.includes(input.paidBy)) throw badRequest('paidBy is not a member of this workspace');
+  if (input.category && input.category !== doc.category) await assertLookup(workspaceId, 'category', input.category, 'category');
   for (const k of ['date', 'description', 'category', 'customCategory', 'paidBy', 'notes'] as const) {
     if (input[k] !== undefined) doc.set(k, input[k]);
+  }
+  if (input.accountId !== undefined) {
+    await assertAccount(workspaceId, input.accountId);
+    doc.set('accountId', input.accountId || undefined);
   }
   if (input.amount !== undefined) doc.amount = round2(input.amount);
   if (input.type) doc.type = input.type;

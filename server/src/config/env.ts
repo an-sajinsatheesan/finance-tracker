@@ -31,5 +31,22 @@ export const env = {
     return (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean);
   },
   get timezone() { return process.env.APP_TIMEZONE ?? 'Asia/Dubai'; },
+  /** Public URL of the frontend, used in invitation and reminder emails. */
+  get appUrl() { return (process.env.APP_URL ?? this.clientOrigins[0]).replace(/\/$/, ''); },
+  get smtp() {
+    const host = process.env.SMTP_HOST;
+    if (!host) return null;
+    return {
+      host,
+      port: Number(process.env.SMTP_PORT ?? 587),
+      secure: process.env.SMTP_SECURE === 'true',
+      user: process.env.SMTP_USER ?? '',
+      pass: process.env.SMTP_PASS ?? '',
+    };
+  },
+  get mailFrom() { return process.env.MAIL_FROM ?? 'Household Finance <no-reply@localhost>'; },
+  /** Shared secret for the scheduled reminder endpoint (Vercel Cron sends it as a Bearer token). */
+  get cronSecret() { return process.env.CRON_SECRET ?? ''; },
+  get allowRegistration() { return process.env.ALLOW_REGISTRATION !== 'false'; },
   get backupDir() { return process.env.BACKUP_DIR ?? path.resolve(process.cwd(), 'backups'); },
 };

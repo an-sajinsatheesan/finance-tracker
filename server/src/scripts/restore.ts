@@ -18,7 +18,7 @@ async function main() {
 
   await connectDB();
   const ws = await Workspace.findOne().sort({ createdAt: 1 }).lean();
-  if (!ws) throw new Error('No workspace found. Run npm run seed first.');
+  if (!ws) throw new Error('No workspace found. Register in the app first.');
   const workspaceId = String(ws._id);
 
   const report = await validateBackup(raw, workspaceId);

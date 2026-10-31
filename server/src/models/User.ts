@@ -2,12 +2,15 @@ import { Schema, model, type InferSchemaType, Types } from 'mongoose';
 
 const userSchema = new Schema(
   {
+    /** Login name. New accounts use their email; older accounts keep their username. */
     username: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true, select: false },
+    email: { type: String, lowercase: true, trim: true, index: { unique: true, sparse: true } },
+    /** Empty for an invited partner until they accept the invitation. */
+    passwordHash: { type: String, select: false },
     displayName: { type: String, required: true, trim: true },
     relationship: { type: String, default: '' },
     workspaceId: { type: Schema.Types.ObjectId, ref: 'Workspace', required: true, index: true },
-    status: { type: String, enum: ['active', 'disabled'], default: 'active' },
+    status: { type: String, enum: ['active', 'invited', 'disabled'], default: 'active' },
     lastLoginAt: { type: Date },
   },
   { timestamps: true },

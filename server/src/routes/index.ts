@@ -12,12 +12,21 @@ import * as expenses from '../controllers/expense.controller.js';
 import * as goals from '../controllers/goal.controller.js';
 import * as summary from '../controllers/summary.controller.js';
 import * as backup from '../controllers/backup.controller.js';
+import * as lookups from '../controllers/lookup.controller.js';
+import * as accounts from '../controllers/account.controller.js';
+import * as reminders from '../controllers/reminder.controller.js';
 
 export const router = Router();
 
 router.get('/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
 router.post('/auth/login', rateLimit(10, 10 * 60 * 1000), body(v.loginSchema), h(auth.login));
+router.post('/auth/register', rateLimit(5, 60 * 60 * 1000), body(v.registerSchema), h(auth.register));
+router.get('/invitations/:token', rateLimit(30, 10 * 60 * 1000), h(auth.describeInvite));
+router.post('/invitations/:token/accept', rateLimit(10, 10 * 60 * 1000), body(v.acceptInviteSchema), h(auth.acceptInvite));
+// Daily reminder emails, called by Vercel Cron with the CRON_SECRET bearer token.
+router.get('/cron/reminders', h(reminders.cron));
+router.post('/cron/reminders', h(reminders.cron));
 
 // Everything below requires a valid JWT; all data access is scoped to the user's workspace.
 router.use(requireAuth);
@@ -27,12 +36,20 @@ router.get('/auth/me', h(auth.me));
 router.get('/workspace', h(workspace.get));
 router.put('/workspace', body(v.workspaceUpdateSchema), h(workspace.update));
 router.post('/workspace/setup/complete', body(v.completeSetupSchema), h(workspace.completeSetup));
+router.get('/workspace/invitations', h(workspace.listInvitations));
+router.post('/workspace/invitations', body(v.invitePartnerSchema), h(workspace.invitePartner));
+router.post('/workspace/invitations/:id/resend', h(workspace.resendInvitation));
+
+router.get('/lookups', h(lookups.list));
+router.post('/lookups', body(v.lookupCreateSchema), h(lookups.create));
+router.put('/lookups/:id', body(v.lookupUpdateSchema), h(lookups.update));
 
 router.get('/income', query(v.monthQuery), h(income.list));
 router.post('/income', body(v.incomeCreateSchema), h(income.create));
 router.put('/income/:id', body(v.incomeUpdateSchema), h(income.update));
 router.post('/income/:id/archive', h(income.archive));
 router.post('/income/:id/unarchive', h(income.unarchive));
+router.post('/income/sync', body(v.monthQuery), h(income.sync));
 
 router.get('/commitments', h(commitments.list));
 router.post('/commitments', body(v.commitmentCreateSchema), h(commitments.create));
@@ -41,6 +58,8 @@ router.post('/commitments/:id/end', body(v.commitmentEndSchema), h(commitments.e
 router.post('/commitments/:id/reactivate', h(commitments.reactivate));
 router.post('/commitments/:id/archive', h(commitments.archive));
 router.post('/commitments/:id/pay', body(v.commitmentPaySchema), h(commitments.pay));
+router.delete('/commitments/:id', h(commitments.remove));
+router.get('/reminders', h(reminders.list));
 
 router.get('/expenses', query(v.monthQuery.passthrough()), h(expenses.list));
 router.post('/expenses', body(v.expenseCreateSchema), h(expenses.create));
@@ -57,10 +76,22 @@ router.post('/goal-allocations/:id/archive', h(goals.archiveAllocation));
 
 router.get('/summary', query(v.summaryQuery), h(summary.summary));
 
+router.get('/accounts', h(accounts.list));
+router.post('/accounts', body(v.accountCreateSchema), h(accounts.create));
+router.put('/accounts/:id', body(v.accountUpdateSchema), h(accounts.update));
+router.get('/accounts/:id/balances', h(accounts.history));
+router.put('/account-balances', body(v.balancesSaveSchema), h(accounts.saveBalances));
+router.get('/transfers', query(v.monthQuery), h(accounts.listTransfers));
+router.post('/transfers', body(v.transferCreateSchema), h(accounts.createTransfer));
+router.post('/transfers/:id/archive', h(accounts.archiveTransfer));
+router.get('/wealth', query(v.wealthQuery), h(accounts.wealth));
+router.get('/balances', query(v.monthQuery), h(accounts.balances));
+
 router.get('/backup/export', h(backup.exportJson));
 router.post('/backup/validate', h(backup.validate));
 router.post('/backup/restore', h(backup.restore));
 router.post('/backup/snapshots', h(backup.snapshot));
 router.get('/backup/snapshots', h(backup.listSnapshots));
 router.get('/backup/snapshots/:id', h(backup.downloadSnapshot));
-// Intentionally no routes to delete the database, the workspace or any financial record.
+// Intentionally no routes to delete the database, the workspace or recorded money (expenses, income,
+// balances are archived instead). Only planned commitments can be deleted.

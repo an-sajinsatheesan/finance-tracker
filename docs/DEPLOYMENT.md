@@ -8,17 +8,11 @@ The code doesn't change for production. You deploy the same repository as **two 
 - In Atlas → Network Access, allow `0.0.0.0/0` (Vercel functions have no fixed IPs).
 - Decide on the production database: `MONGODB_DB=finance_prod`.
 
-## 1. Seed production once (from your PC)
+## 1. Production data
 
-Create `server/.env.production.local` (git-ignored) or temporarily switch `server/.env.local` to:
+Nothing needs seeding by hand: the API inserts the enum (lookup) rows on its first request. (`npm run seed` with `MONGODB_DB=finance_prod` does the same from your PC.) Users register in the app.
 
-```ini
-MONGODB_DB=finance_prod
-SEED_SAJIN_PASSWORD=...
-SEED_ABHIRAMI_PASSWORD=...
-```
-
-Run `npm run seed`, then switch back to `finance_dev`. To move your dev data into prod instead, run `npm run backup` against dev, then `npm run seed` and `npm run restore -- <file>` against prod.
+To move dev data into prod, register in prod first, then use Settings → Backup & restore (or `npm run backup` against dev and `npm run restore -- <file>` against prod). Users are matched by username/email.
 
 ## 2. API project (server)
 
@@ -42,6 +36,10 @@ Environment variables (Production):
 | `JWT_EXPIRES_IN` | `7d` |
 | `CLIENT_ORIGIN` | `https://<your-frontend>.vercel.app` (comma-separate several) |
 | `APP_TIMEZONE` | `Asia/Dubai` |
+| `APP_URL` | `https://<your-frontend>.vercel.app` (links in emails) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | your mail provider (partner invitations, bill reminders) |
+| `CRON_SECRET` | long random string. Vercel Cron sends it to `/api/cron/reminders` daily at 08:00 Dubai (`server/vercel.json`) |
+| `ALLOW_REGISTRATION` | `false` once you've both registered, to stop strangers signing up |
 
 `server/api/index.ts` exports the Express app, and `server/vercel.json` routes `/api/*` to it. The MongoDB connection is cached on `globalThis` with a small pool (`maxPoolSize: 10`), so warm invocations reuse it instead of opening new connections. This keeps you well within the M0 connection limit.
 
@@ -69,7 +67,7 @@ Environment variable:
 ## 4. After deploying
 
 1. Add the frontend URL to the API's `CLIENT_ORIGIN` and redeploy the API.
-2. Sign in on both phones. Data is live and shared through the API.
+2. Register, invite your partner, and sign in on both phones. Data is live and shared through the API.
 3. Export a backup from Settings and keep it somewhere safe. Do this regularly, since Atlas M0 has no automated backups.
 
 ## Local vs production configuration

@@ -1,22 +1,27 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
-import { Layout } from './components/Layout';
-import { Spinner } from './components/ui';
+import { Layout, ShellSkeleton } from './components/Layout';
 import Login from './pages/Login';
+import AcceptInvite from './pages/AcceptInvite';
 import Setup from './pages/Setup';
 import Dashboard from './pages/Dashboard';
 import Expenses from './pages/Expenses';
 import IncomePage from './pages/Income';
 import Commitments from './pages/Commitments';
 import Goals from './pages/Goals';
+import Accounts from './pages/Accounts';
+import WealthPage from './pages/Wealth';
+import BalancesPage from './pages/Balances';
 import SettingsPage from './pages/Settings';
 
 export default function App() {
   const { user, workspace, loading } = useAuth();
-  if (loading) return <Spinner />;
+  if (loading) return <ShellSkeleton />;
   if (!user || !workspace) {
     return (
       <Routes>
+        <Route path="/invite/:token" element={<AcceptInvite />} />
+        <Route path="/register" element={<Login initialMode="register" />} />
         <Route path="*" element={<Login />} />
       </Routes>
     );
@@ -36,6 +41,9 @@ export default function App() {
         <Route path="expenses/new" element={<Expenses openNew />} />
         <Route path="income" element={<IncomePage />} />
         <Route path="commitments" element={<Commitments />} />
+        <Route path="accounts" element={<Accounts />} />
+        <Route path="wealth" element={<WealthPage />} />
+        <Route path="balances" element={<BalancesPage />} />
         <Route path="goals" element={<Goals />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

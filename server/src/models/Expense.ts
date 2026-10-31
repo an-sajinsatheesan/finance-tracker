@@ -20,6 +20,8 @@ const expenseSchema = new Schema(
     /** Who bears the cost. Personal: one share. Common: split equally. Sum === amount. */
     shares: { type: [shareSchema], required: true },
     commitmentId: { type: Schema.Types.ObjectId, ref: 'Commitment' },
+    /** Account the money left (optional); a credit card raises its outstanding balance. */
+    accountId: { type: Schema.Types.ObjectId, ref: 'Account' },
     notes: { type: String, default: '' },
     status: { type: String, enum: ['active', 'archived'], default: 'active' },
     archivedAt: { type: Date },

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CATEGORIES } from './categories.js';
+import { LOOKUP_TYPES } from './lookups.js';
 import { DATE_RE, MONTH_RE } from './month.js';
 
 export const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
@@ -7,24 +7,51 @@ export const month = z.string().regex(MONTH_RE, 'Month must be YYYY-MM');
 export const date = z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD');
 const money = z.coerce.number().finite().min(0).max(100_000_000);
 const positiveMoney = z.coerce.number().finite().gt(0, 'Amount must be greater than 0').max(100_000_000);
-const category = z.enum(CATEGORIES);
+/** Categories, banks, currencies... are Lookup codes, checked against the database in the services. */
+const code = (max = 40) => z.string().trim().min(1).max(max);
+const category = code();
 const text = (max: number) => z.string().trim().max(max);
 
+/** `email` also accepts the username of accounts created before email sign-in. */
 export const loginSchema = z.object({
-  username: z.string().trim().min(1).max(50),
+  email: z.string().trim().min(1).max(254),
   password: z.string().min(1).max(200),
 });
 
+const email = z.string().trim().toLowerCase().email('Enter a valid email address').max(254);
+const password = z.string().min(8, 'Password must be at least 8 characters').max(200);
+
+export const registerSchema = z
+  .object({
+    displayName: text(50).min(1),
+    email,
+    password,
+    relationship: text(30).default(''),
+    mode: z.enum(['personal', 'couple']),
+    workspaceName: text(80).optional(),
+    partner: z
+      .object({ displayName: text(50).min(1), email: email.optional().nullable().or(z.literal('')), relationship: text(30).default('') })
+      .optional()
+      .nullable(),
+  })
+  .refine((v) => v.mode === 'personal' || !!v.partner, { message: 'Add your partner’s name', path: ['partner'] });
+
+export const acceptInviteSchema = z.object({ password, displayName: text(50).optional() });
+export const invitePartnerSchema = z.object({ email, displayName: text(50).optional(), relationship: text(30).optional() });
+
 export const incomeSourceSchema = z.object({
   key: z.string().trim().min(1).max(40).optional(),
-  source: text(80).min(1),
+  source: code(80),
   amount: money,
   expectedDay: z.coerce.number().int().min(1).max(31).default(1),
+  paidPreviousMonth: z.boolean().default(false),
   active: z.boolean().default(true),
+  accountId: objectId.optional().nullable(),
 });
 
 export const workspaceUpdateSchema = z.object({
   name: text(80).min(1).optional(),
+  fxRates: z.record(z.string().regex(/^[A-Z]{3}$/), z.coerce.number().finite().gt(0).max(1_000_000)).optional(),
   members: z
     .array(
       z.object({
@@ -42,15 +69,19 @@ export const completeSetupSchema = z.object({ startMonth: month });
 export const incomeCreateSchema = z.object({
   userId: objectId,
   month,
-  source: text(80).min(1),
+  source: code(80),
   expectedAmount: money,
   receivedAmount: money.default(0),
   expectedDate: date.optional().or(z.literal('')),
   receivedDate: date.optional().or(z.literal('')),
   status: z.enum(['expected', 'partial', 'received']).optional(),
   notes: text(500).default(''),
+  accountId: objectId.optional().nullable(),
 });
 export const incomeUpdateSchema = incomeCreateSchema.omit({ month: true }).partial();
+
+/** Days before the due day to remind; null = no reminder. */
+const reminderDays = z.coerce.number().int().min(0).max(15).nullable();
 
 export const commitmentCreateSchema = z
   .object({
@@ -63,6 +94,7 @@ export const commitmentCreateSchema = z
     startMonth: month,
     endMonth: month.optional().nullable(),
     dueDay: z.coerce.number().int().min(1).max(31).default(1),
+    reminderDaysBefore: reminderDays.default(3),
     notes: text(500).default(''),
   })
   .refine((v) => v.type === 'common' || !!v.ownerId, { message: 'Personal commitments need an owner', path: ['ownerId'] })
@@ -81,6 +113,7 @@ export const commitmentUpdateSchema = z.object({
   startMonth: month.optional(),
   endMonth: month.optional().nullable(),
   dueDay: z.coerce.number().int().min(1).max(31).optional(),
+  reminderDaysBefore: reminderDays.optional(),
   notes: text(500).optional(),
 });
 
@@ -90,6 +123,7 @@ export const commitmentPaySchema = z.object({
   date: date.optional(),
   paidBy: objectId.optional(),
   amount: positiveMoney.optional(),
+  accountId: objectId.optional().nullable(),
 });
 
 export const expenseCreateSchema = z
@@ -104,6 +138,7 @@ export const expenseCreateSchema = z
     ownerId: objectId.optional().nullable(),
     notes: text(500).default(''),
     commitmentId: objectId.optional().nullable(),
+    accountId: objectId.optional().nullable(),
   })
   .refine((v) => v.category !== 'Custom' || v.customCategory.length > 0, { message: 'Name the custom category', path: ['customCategory'] });
 
@@ -117,6 +152,7 @@ export const expenseUpdateSchema = z.object({
   type: z.enum(['personal', 'common']).optional(),
   ownerId: objectId.optional().nullable(),
   notes: text(500).optional(),
+  accountId: objectId.optional().nullable(),
 });
 
 export const goalCreateSchema = z
@@ -140,6 +176,73 @@ export const allocationCreateSchema = z.object({
   amount: positiveMoney,
   note: text(200).default(''),
 });
+
+// ---------- Lookups ----------
+
+export const lookupCreateSchema = z.object({
+  type: z.enum(Object.keys(LOOKUP_TYPES) as [keyof typeof LOOKUP_TYPES, ...(keyof typeof LOOKUP_TYPES)[]]),
+  code: text(40).optional(),
+  label: text(60).min(1),
+  meta: z.record(z.union([z.string().max(60), z.number(), z.boolean()])).optional(),
+});
+export const lookupUpdateSchema = z.object({
+  label: text(60).min(1).optional(),
+  active: z.boolean().optional(),
+  meta: z.record(z.union([z.string().max(60), z.number(), z.boolean()])).optional(),
+});
+
+// ---------- Accounts & wealth ----------
+
+const signedMoney = z.coerce.number().finite().min(-100_000_000).max(100_000_000);
+
+export const accountCreateSchema = z
+  .object({
+    name: text(80).min(1),
+    bank: code(),
+    currency: z.string().trim().regex(/^[A-Z]{3}$/, 'Currency must be a 3-letter code'),
+    accountType: code(),
+    type: z.enum(['personal', 'common']),
+    ownerId: objectId.optional().nullable(),
+    accountNumberLast4: z.string().trim().regex(/^\d{0,4}$/, 'Up to 4 digits').default(''),
+    openedMonth: month,
+    notes: text(500).default(''),
+    openingBalance: signedMoney.optional().nullable(),
+    openingInvested: money.optional().nullable(),
+  })
+  .refine((v) => v.type === 'common' || !!v.ownerId, { message: 'Personal accounts need an owner', path: ['ownerId'] });
+
+export const accountUpdateSchema = z.object({
+  name: text(80).min(1).optional(),
+  bank: code().optional(),
+  currency: z.string().trim().regex(/^[A-Z]{3}$/).optional(),
+  accountType: code().optional(),
+  type: z.enum(['personal', 'common']).optional(),
+  ownerId: objectId.optional().nullable(),
+  accountNumberLast4: z.string().trim().regex(/^\d{0,4}$/).optional(),
+  openedMonth: month.optional(),
+  notes: text(500).optional(),
+  archived: z.boolean().optional(),
+});
+
+export const balancesSaveSchema = z.object({
+  month,
+  items: z
+    .array(z.object({ accountId: objectId, balance: signedMoney.nullable(), invested: money.optional().nullable(), note: text(200).optional() }))
+    .min(1)
+    .max(200),
+});
+
+export const transferCreateSchema = z.object({
+  date,
+  fromAccountId: objectId,
+  toAccountId: objectId,
+  amount: positiveMoney,
+  toAmount: positiveMoney.optional().nullable(),
+  fee: money.default(0),
+  note: text(200).default(''),
+});
+
+export const wealthQuery = z.object({ month, scope: z.string().min(1).default('all') });
 
 export const monthQuery = z.object({ month });
 export const summaryQuery = z.object({ month, scope: z.string().min(1) });

@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { AppError, badRequest, notFound } from '../utils/AppError.js';
 import { round2, sum } from '../utils/money.js';
 import {
-  Backup, Commitment, Expense, Goal, GoalAllocation, Income, IncomeMonth, User, Workspace,
+  Account, AccountBalance, Backup, Commitment, Expense, Goal, GoalAllocation, Income, IncomeMonth, Lookup, Transfer, User, Workspace,
 } from '../models/index.js';
 
 export const BACKUP_APP = 'couple-finance-tracker';
-export const BACKUP_SCHEMA_VERSION = 1;
+/** v2 adds accounts, balances, transfers, custom lookups, workspace mode and FX rates. v1 files still restore. */
+export const BACKUP_SCHEMA_VERSION = 2;
 
 /** Collections included in a workspace backup, in restore order. */
 const COLLECTIONS = {
@@ -17,6 +18,10 @@ const COLLECTIONS = {
   expenses: Expense,
   goals: Goal,
   allocations: GoalAllocation,
+  lookups: Lookup, // only the workspace's own custom values
+  accounts: Account,
+  accountBalances: AccountBalance,
+  transfers: Transfer,
 } as const satisfies Record<string, Model<any>>;
 type CollectionKey = keyof typeof COLLECTIONS;
 
@@ -35,11 +40,11 @@ export async function exportWorkspace(workspaceId: string) {
     schemaVersion: BACKUP_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     workspace: {
-      _id: ws._id, name: ws.name, currency: ws.currency, members: ws.members, setupCompleted: ws.setupCompleted,
-      setupCompletedAt: ws.setupCompletedAt, startMonth: ws.startMonth,
+      _id: ws._id, name: ws.name, mode: ws.mode, currency: ws.currency, fxRates: ws.fxRates, members: ws.members,
+      setupCompleted: ws.setupCompleted, setupCompletedAt: ws.setupCompletedAt, startMonth: ws.startMonth,
     },
     // Password hashes are never exported. Users are matched by username on restore.
-    users: users.map((u) => ({ _id: u._id, username: u.username, displayName: u.displayName, relationship: u.relationship })),
+    users: users.map((u) => ({ _id: u._id, username: u.username, email: u.email, displayName: u.displayName, relationship: u.relationship })),
     counts: Object.fromEntries(entries.map(([k, v]) => [k, v.length])),
     data,
   };
@@ -61,13 +66,14 @@ const backupSchema = z.object({
   exportedAt: z.string().datetime(),
   workspace: z.object({
     _id: oid, name: z.string().min(1), currency: z.string(), setupCompleted: z.boolean(), startMonth: monthStr,
+    mode: z.enum(['personal', 'couple']).optional(), fxRates: z.record(num).optional(),
     setupCompletedAt: z.string().optional().nullable(),
     members: z.array(z.object({
       userId: oid, displayName: z.string(), relationship: z.string().optional(),
-      incomeSources: z.array(z.object({ key: z.string(), source: z.string(), amount: num, expectedDay: z.number().optional(), active: z.boolean().optional() })),
+      incomeSources: z.array(z.object({ key: z.string(), source: z.string(), amount: num, expectedDay: z.number().optional(), paidPreviousMonth: z.boolean().optional(), active: z.boolean().optional(), accountId: oid.optional().nullable() })),
     })).min(1),
   }),
-  users: z.array(z.object({ _id: oid, username: z.string().min(1), displayName: z.string(), relationship: z.string().optional() })).min(1),
+  users: z.array(z.object({ _id: oid, username: z.string().min(1), email: z.string().nullable().optional(), displayName: z.string(), relationship: z.string().optional() })).min(1),
   counts: z.record(z.number()).optional(),
   data: z.object({
     incomes: z.array(base.extend({ userId: oid, month: monthStr, source: z.string(), expectedAmount: num, receivedAmount: num.optional(), status: z.string() })),
@@ -83,6 +89,11 @@ const backupSchema = z.object({
     })),
     goals: z.array(base.extend({ name: z.string(), type: z.enum(['personal', 'common']) })),
     allocations: z.array(base.extend({ goalId: oid, userId: oid, month: monthStr, date: dateStr, amount: num })),
+    // Added in schema v2 — absent in v1 files.
+    lookups: z.array(base.extend({ type: z.string(), code: z.string(), label: z.string() })).default([]),
+    accounts: z.array(base.extend({ name: z.string(), bank: z.string(), currency: z.string(), accountType: z.string(), type: z.enum(['personal', 'common']), openedMonth: monthStr })).default([]),
+    accountBalances: z.array(base.extend({ accountId: oid, month: monthStr, balance: num })).default([]),
+    transfers: z.array(base.extend({ fromAccountId: oid, toAccountId: oid, date: dateStr, month: monthStr, amount: num, toAmount: num })).default([]),
   }),
 });
 export type BackupFile = z.infer<typeof backupSchema>;
@@ -133,6 +144,11 @@ export async function validateBackup(raw: unknown, workspaceId: string): Promise
     if (e.commitmentId && !commitmentIds.has(e.commitmentId)) errors.push(`Expense ${e._id}: unknown commitment.`);
   }
   for (const i of b.data.incomes) if (!userIds.has(i.userId)) errors.push(`Income ${i._id}: unknown user.`);
+  const accountIds = new Set(b.data.accounts.map((a) => a._id));
+  for (const x of b.data.accountBalances) if (!accountIds.has(x.accountId)) errors.push(`Balance ${x._id}: unknown account.`);
+  for (const t of b.data.transfers) {
+    if (!accountIds.has(t.fromAccountId) || !accountIds.has(t.toAccountId)) errors.push(`Transfer ${t._id}: unknown account.`);
+  }
   for (const a of b.data.allocations) {
     if (!goalIds.has(a.goalId)) errors.push(`Allocation ${a._id}: unknown goal.`);
     if (!userIds.has(a.userId)) errors.push(`Allocation ${a._id}: unknown user.`);
@@ -164,7 +180,7 @@ export async function validateBackup(raw: unknown, workspaceId: string): Promise
 
 /** Rewrites workspace and user ids so a backup can be restored into the current workspace. */
 function remap(b: BackupFile, workspaceId: string, userMap: Map<string, string>): BackupFile {
-  const userKeys = new Set(['userId', 'paidBy', 'ownerId', 'createdBy', 'archivedBy']);
+  const userKeys = new Set(['userId', 'paidBy', 'ownerId', 'createdBy', 'archivedBy', 'updatedBy']);
   const walk = (v: unknown, key?: string): unknown => {
     if (Array.isArray(v)) return v.map((x) => walk(x));
     if (v && typeof v === 'object') {
@@ -233,6 +249,8 @@ async function replaceWorkspaceData(workspaceId: string, b: BackupFile, session?
     {
       $set: {
         name: b.workspace.name, currency: b.workspace.currency, startMonth: b.workspace.startMonth,
+        mode: b.workspace.mode ?? (b.workspace.members.length > 1 ? 'couple' : 'personal'),
+        ...(b.workspace.fxRates ? { fxRates: b.workspace.fxRates } : {}),
         setupCompleted: b.workspace.setupCompleted,
         setupCompletedAt: b.workspace.setupCompletedAt ? new Date(b.workspace.setupCompletedAt) : undefined,
         members: b.workspace.members.map((m) => ({ ...m, userId: new mongoose.Types.ObjectId(m.userId) })),

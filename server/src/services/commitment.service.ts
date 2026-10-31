@@ -4,12 +4,14 @@ import { currentMonth, dateInMonth, today } from '../utils/month.js';
 import { commitmentRepository } from '../repositories/commitment.repository.js';
 import { expenseRepository } from '../repositories/expense.repository.js';
 import { assertMember } from './workspace.service.js';
+import { assertLookup } from './lookup.service.js';
 import { amountFor, statusAt, type CommitmentStatus } from './commitment.logic.js';
-import { createExpense } from './expense.service.js';
+import { assertMonthStarted, createExpense } from './expense.service.js';
 
 type CreateInput = {
   title: string; category: string; customCategory: string; type: 'personal' | 'common';
   ownerId?: string | null; amount: number; startMonth: string; endMonth?: string | null; dueDay: number; notes: string;
+  reminderDaysBefore?: number | null;
 };
 
 /** Ensures the first version starts exactly at startMonth and versions are sorted. */
@@ -33,6 +35,8 @@ export function serializeCommitment(c: any, refMonth = currentMonth()) {
     startMonth: c.startMonth,
     endMonth: c.endMonth ?? null,
     dueDay: c.dueDay,
+    // Commitments created before reminders existed have no value: they get the default.
+    reminderDaysBefore: c.reminderDaysBefore === undefined ? 3 : c.reminderDaysBefore,
     notes: c.notes,
     status: statusAt(c, refMonth) as CommitmentStatus,
   };
@@ -45,6 +49,7 @@ export async function listCommitments(workspaceId: string, refMonth = currentMon
 
 export async function createCommitment(workspaceId: string, userId: string, input: CreateInput) {
   if (input.type === 'personal') await assertMember(workspaceId, input.ownerId, 'ownerId');
+  await assertLookup(workspaceId, 'category', input.category, 'category');
   const doc = await commitmentRepository.create({
     workspaceId,
     title: input.title,
@@ -56,6 +61,7 @@ export async function createCommitment(workspaceId: string, userId: string, inpu
     startMonth: input.startMonth,
     endMonth: input.endMonth ?? null,
     dueDay: input.dueDay,
+    reminderDaysBefore: input.reminderDaysBefore === undefined ? 3 : input.reminderDaysBefore,
     notes: input.notes,
     createdBy: userId,
   });
@@ -71,7 +77,8 @@ export async function updateCommitment(workspaceId: string, id: string, input: R
     if (!ownerId) throw badRequest('Personal commitments need an owner');
     await assertMember(workspaceId, ownerId, 'ownerId');
   }
-  for (const k of ['title', 'category', 'customCategory', 'startMonth', 'dueDay', 'notes'] as const) {
+  if (input.category !== undefined) await assertLookup(workspaceId, 'category', input.category, 'category');
+  for (const k of ['title', 'category', 'customCategory', 'startMonth', 'dueDay', 'reminderDaysBefore', 'notes'] as const) {
     if (input[k] !== undefined) doc.set(k, input[k]);
   }
   if (input.endMonth !== undefined) doc.endMonth = input.endMonth;
@@ -110,7 +117,20 @@ export async function reactivateCommitment(workspaceId: string, id: string) {
   return serializeCommitment(doc.toObject());
 }
 
-/** Archive (setup clean-up only): hides a commitment created by mistake. Never deleted. */
+/**
+ * Deletes a commitment that is no longer needed. It disappears from every
+ * month's plan; payments already recorded stay as ordinary expenses (unlinked).
+ * Use "end" instead to keep it in the plan of past months.
+ */
+export async function deleteCommitment(workspaceId: string, id: string) {
+  const doc = await commitmentRepository.findById(workspaceId, id);
+  if (!doc) throw notFound('Commitment');
+  const unlinked = await expenseRepository.unlinkCommitment(workspaceId, id);
+  await commitmentRepository.delete(workspaceId, id);
+  return { id, deleted: true, unlinkedPayments: unlinked };
+}
+
+/** Archive (setup clean-up only): hides a commitment created by mistake. */
 export async function archiveCommitment(workspaceId: string, id: string) {
   const doc = await commitmentRepository.findById(workspaceId, id);
   if (!doc) throw notFound('Commitment');
@@ -124,8 +144,9 @@ export async function payCommitment(
   workspaceId: string,
   userId: string,
   id: string,
-  input: { month: string; date?: string; paidBy?: string; amount?: number },
+  input: { month: string; date?: string; paidBy?: string; amount?: number; accountId?: string | null },
 ) {
+  assertMonthStarted(input.month);
   const c = await commitmentRepository.findById(workspaceId, id);
   if (!c) throw notFound('Commitment');
   const existing = await expenseRepository.findForCommitment(workspaceId, id, input.month);
@@ -146,5 +167,6 @@ export async function payCommitment(
     ownerId: c.type === 'personal' ? String(c.ownerId) : null,
     notes: '',
     commitmentId: id,
+    accountId: input.accountId,
   });
 }
