@@ -40,6 +40,12 @@ const balanceSchema = new Schema(
     balance: { type: Number, required: true },
     invested: { type: Number, default: null },
     note: { type: String, default: '' },
+    /**
+     * true: the balance entered when the account was added — its balance when tracking starts,
+     * so money linked in that month is added to it. false: an entered month-end balance.
+     * Unset on rows saved before this field existed (see isOpeningBalance).
+     */
+    opening: { type: Boolean },
     updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true },

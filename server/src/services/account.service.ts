@@ -64,7 +64,7 @@ export async function createAccount(workspaceId: string, userId: string, input: 
   if (input.openingBalance !== undefined && input.openingBalance !== null) {
     await AccountBalance.create({
       workspaceId, accountId: doc._id, month: input.openedMonth, balance: round2(input.openingBalance),
-      invested: input.openingInvested ?? null, updatedBy: userId,
+      invested: input.openingInvested ?? null, opening: true, updatedBy: userId,
     });
   }
   const groups = await groupsByType(workspaceId);
@@ -128,7 +128,7 @@ export async function saveBalances(
     }
     await AccountBalance.updateOne(
       { workspaceId, accountId: i.accountId, month },
-      { $set: { balance: round2(i.balance), invested: i.invested ?? null, note: i.note ?? '', updatedBy: userId } },
+      { $set: { balance: round2(i.balance), invested: i.invested ?? null, note: i.note ?? '', opening: false, updatedBy: userId } },
       { upsert: true },
     );
   }
@@ -192,10 +192,15 @@ export async function getWealth(workspaceId: string, month: string, scope = 'all
   ]);
   const idSet = new Set(ids);
   const fx = ws.fxRates instanceof Map ? Object.fromEntries(ws.fxRates) : { ...(ws.fxRates ?? {}) };
-  const recorded: BalanceRow[] = balances.map((b) => ({ accountId: String(b.accountId), month: b.month, balance: b.balance, invested: b.invested }));
+  const opened = new Map(all.map((a) => [a.id, a.openedMonth]));
+  const recorded: BalanceRow[] = balances.map((b) => ({
+    accountId: String(b.accountId), month: b.month, balance: b.balance, invested: b.invested, opening: isOpeningBalance(b, opened.get(String(b.accountId))),
+  }));
+  const calculated = calculatedMonths(accounts as AccountRow[], recorded, linkedMoney, month);
+  const replaced = new Set(calculated.map((c) => `${c.accountId}|${c.month}`)); // opening months get their calculated end-of-month value
   return computeWealth({
     accounts: accounts as AccountRow[],
-    balances: [...recorded, ...calculatedMonths(accounts as AccountRow[], recorded, linkedMoney, month)],
+    balances: [...recorded.filter((r) => !replaced.has(`${r.accountId}|${r.month}`)), ...calculated],
     transfers: transfers
       .filter((t) => idSet.has(String(t.fromAccountId)) && idSet.has(String(t.toAccountId)))
       .map((t) => ({ month: t.month, date: t.date, fromAccountId: String(t.fromAccountId), toAccountId: String(t.toAccountId), amount: t.amount, toAmount: t.toAmount, fee: t.fee })),
@@ -204,6 +209,9 @@ export async function getWealth(workspaceId: string, month: string, scope = 'all
 }
 
 // ---------- Calculated balances & savings ----------
+
+/** Rows saved before `opening` existed: the balance in the account's first month is the one entered when it was added. */
+const isOpeningBalance = (b: { opening?: boolean | null; month: string }, openedMonth?: string) => b.opening ?? b.month === openedMonth;
 
 /** Income, expenses and transfers linked to the workspace's accounts, up to the end of `month`. */
 async function loadLinkedMoney(workspaceId: string, accountIds: string[], month: string) {
@@ -240,11 +248,11 @@ function calculatedMonths(accounts: AccountRow[], recorded: BalanceRow[], money:
   for (const a of accounts) {
     for (let i = 0; i <= TREND_MONTHS; i++) {
       const m = addMonths(month, -i);
-      if (recorded.some((r) => r.accountId === a.id && r.month === m)) continue;
+      if (recorded.some((r) => r.accountId === a.id && r.month === m && !r.opening)) continue;
       const calc = calculatedBalanceAt(a, m, recorded, flows);
       const last = latestBalance(recorded, a.id, m);
       if (!calc || (!last && calc.balance === 0)) continue; // nothing entered or linked yet
-      out.push({ accountId: a.id, month: m, balance: calc.balance, invested: last?.invested ?? null, calculated: true });
+      out.push({ accountId: a.id, month: m, balance: calc.balance, invested: last?.invested ?? null, calculated: true, opening: last?.month === m && last.opening });
     }
   }
   return out;
@@ -261,9 +269,12 @@ export async function getBalances(workspaceId: string, month: string) {
     loadLinkedMoney(workspaceId, ids, month),
   ]);
   const fx = ws.fxRates instanceof Map ? Object.fromEntries(ws.fxRates) : { ...(ws.fxRates ?? {}) };
+  const opened = new Map(accounts.map((a) => [a.id, a.openedMonth]));
   return computeBalances({
     accounts: accounts as AccountRow[],
-    snapshots: snapshots.map((s) => ({ accountId: String(s.accountId), month: s.month, balance: s.balance })),
+    snapshots: snapshots.map((s) => ({
+      accountId: String(s.accountId), month: s.month, balance: s.balance, opening: isOpeningBalance(s, opened.get(String(s.accountId))),
+    })),
     ...money,
     memberIds: ws.members.map((m) => String(m.userId)),
     month,

@@ -18,7 +18,7 @@ export interface AccountRow {
   type: 'personal' | 'common'; ownerId?: string | null; openedMonth: string;
 }
 /** `calculated`: not entered by the user, worked out from the linked income, expenses and transfers. */
-export interface BalanceRow { accountId: string; month: string; balance: number; invested?: number | null; calculated?: boolean }
+export interface BalanceRow { accountId: string; month: string; balance: number; invested?: number | null; calculated?: boolean; opening?: boolean }
 export interface TransferRow { month: string; date: string; fromAccountId: string; toAccountId: string; amount: number; toAmount: number; fee?: number }
 
 type GroupTotals = Record<AccountGroup, number>;
@@ -61,7 +61,7 @@ export function computeWealth(input: {
   month: string; base: string; fx: Record<string, number>; trendMonths?: number;
 }) {
   const { accounts, balances, transfers, month, base, fx } = input;
-  const entered = balances.filter((b) => !b.calculated);
+  const entered = balances.filter((b) => !b.calculated || b.opening); // an opening balance was entered, even though its month-end is calculated
   const prev = addMonths(month, -1);
   const missingRates = new Set<string>();
   const conv = (v: number, cur: string) => {

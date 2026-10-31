@@ -218,8 +218,9 @@ d('API', () => {
     }).expect(201);
     await request(app).put('/api/workspace').set(auth(tokenS)).send({ fxRates: { INR: 23.5 } }).expect(200);
     const w = await request(app).get(`/api/wealth?month=${month}`).set(auth(tokenA)).expect(200);
-    expect(w.body.byCurrency.map((c: any) => [c.currency, c.net])).toEqual([['AED', 10000], ['INR', 235000]]);
-    expect(w.body.combined.net).toBe(20000);
+    // ENBD: 10,000 entered when added, less the 1,000 sent this month. SBI: 235,000 entered as the month-end balance.
+    expect(w.body.byCurrency.map((c: any) => [c.currency, c.net])).toEqual([['AED', 9000], ['INR', 235000]]);
+    expect(w.body.combined.net).toBe(19000);
     expect(w.body.transferSummary[0]).toMatchObject({ from: 'AED', to: 'INR', amount: 1000, toAmount: 23500, rate: 23.5 });
     const mine = await request(app).get(`/api/wealth?month=${month}&scope=${abhiId}`).set(auth(tokenA)).expect(200);
     expect(mine.body.accounts).toEqual([]);
@@ -300,7 +301,7 @@ d('API', () => {
     }).expect(201);
     await request(app).put(`/api/accounts/${acc.body.id}`).set(auth(tokenS)).send({ openedMonth: prev }).expect(200);
     const b = await request(app).get(`/api/balances?month=${prev}`).set(auth(tokenS)).expect(200);
-    expect(b.body.accounts.find((a: any) => a.id === acc.body.id)).toMatchObject({ closing: 5000, recorded: true });
+    expect(b.body.accounts.find((a: any) => a.id === acc.body.id)).toMatchObject({ opening: 5000, closing: 5000 });
 
     // Accounts / Wealth show the same calculated balance as Balances when no balance was entered for the month.
     await request(app).post('/api/income').set(auth(tokenS)).send({

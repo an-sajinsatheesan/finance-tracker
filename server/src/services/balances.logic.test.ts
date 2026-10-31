@@ -45,6 +45,17 @@ describe('calculated balances', () => {
     expect(only.accounts.find((a) => a.id === 'enbd')).toMatchObject({ opening: 5000, moneyIn: 7000, moneyOut: 0, closing: 12000, recorded: false });
   });
 
+  it('adds money linked in the opening month to the balance entered with the account (5,127 + 13,000 on 30 Oct)', () => {
+    const input: BalancesInput = {
+      ...base, expenses: [], transfers: [],
+      accounts: [acc('enbd', { openedMonth: '2026-10' })],
+      snapshots: [{ accountId: 'enbd', month: '2026-10', balance: 5127, opening: true }],
+      incomes: [{ userId: 'u1', month: '2026-11', receivedDate: '2026-10-30', receivedAmount: 13000, status: 'received', accountId: 'enbd' }],
+    };
+    expect(computeBalances(input).accounts[0]).toMatchObject({ opening: 5127, moneyIn: 13000, closing: 18127, recorded: false, untracked: null });
+    expect(computeBalances({ ...input, month: '2026-11' }).accounts[0]).toMatchObject({ opening: 18127, moneyIn: 0, closing: 18127 });
+  });
+
   it('subtracts expenses and transfers, and counts income on the day it reached the bank', () => {
     // 5000 + 7000 (Oct salary) + 7000 (Nov salary on 30 Oct) − 1000 expense − 4000 to joint
     expect(row('enbd')).toMatchObject({ moneyIn: 14000, moneyOut: 5000, closing: 14000 });

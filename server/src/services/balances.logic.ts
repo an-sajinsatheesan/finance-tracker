@@ -10,7 +10,8 @@ import { toBase, type AccountRow } from './wealth.logic.js';
  * outstanding amount, so the same flows move them the other way.
  */
 
-export interface SnapshotRow { accountId: string; month: string; balance: number }
+/** `opening`: the balance entered with the account, i.e. its balance when tracking starts (before that month's money). */
+export interface SnapshotRow { accountId: string; month: string; balance: number; opening?: boolean }
 export interface FlowIncome {
   userId: string; month: string; receivedDate?: string | null; receivedAmount: number; status: string; accountId?: string | null;
 }
@@ -67,9 +68,11 @@ export function balanceAt(a: AccountRow, month: string, snapshots: SnapshotRow[]
   for (const s of snapshots) {
     if (s.accountId === a.id && s.month <= month && (!last || s.month > last.month)) last = s;
   }
-  if (last && last.month === month) return { balance: last.balance, recorded: true };
+  if (last && last.month === month && !last.opening) return { balance: last.balance, recorded: true };
   let bal = last ? last.balance : 0;
-  for (let m = last ? addMonths(last.month, 1) : a.openedMonth; m <= month; m = addMonths(m, 1)) {
+  // An opening balance is the start of its month, so that month's linked money is added to it.
+  const from = !last ? a.openedMonth : last.opening ? last.month : addMonths(last.month, 1);
+  for (let m = from; m <= month; m = addMonths(m, 1)) {
     const f = flows.get(key(a.id, m));
     if (f) bal = round2(bal + sign(a) * (f.in - f.out));
   }
@@ -90,7 +93,8 @@ export function computeBalances(input: BalancesInput) {
   const rows = accounts
     .filter((a) => a.openedMonth <= month)
     .map((a) => {
-      const opening = balanceAt(a, prev, snapshots, flows)?.balance ?? 0;
+      const start = snapshots.find((s) => s.accountId === a.id && s.month === month && s.opening);
+      const opening = start ? start.balance : balanceAt(a, prev, snapshots, flows)?.balance ?? 0;
       const closing = balanceAt(a, month, snapshots, flows)!;
       const f = flows.get(key(a.id, month)) ?? { in: 0, out: 0 };
       const calculated = round2(opening + sign(a) * (f.in - f.out));
