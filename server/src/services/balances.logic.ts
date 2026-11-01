@@ -16,7 +16,8 @@ export interface FlowIncome {
   userId: string; month: string; receivedDate?: string | null; receivedAmount: number; status: string; accountId?: string | null;
 }
 export interface FlowExpense { month: string; amount: number; accountId?: string | null; shares: { userId: string; amount: number }[] }
-export interface FlowTransfer { month: string; fromAccountId: string; toAccountId: string; amount: number; toAmount: number; fee?: number }
+/** Either side may be missing for a partner's share sent without both accounts chosen. */
+export interface FlowTransfer { month: string; fromAccountId?: string | null; toAccountId?: string | null; amount: number; toAmount: number; fee?: number }
 
 export interface BalancesInput {
   accounts: AccountRow[];
@@ -53,8 +54,8 @@ export function indexFlows(incomes: FlowIncome[], expenses: FlowExpense[], trans
   }
   for (const e of expenses) if (e.accountId) add(e.accountId, e.month, 'out', e.amount);
   for (const t of transfers) {
-    add(t.fromAccountId, t.month, 'out', t.amount + (t.fee ?? 0));
-    add(t.toAccountId, t.month, 'in', t.toAmount);
+    if (t.fromAccountId) add(t.fromAccountId, t.month, 'out', t.amount + (t.fee ?? 0));
+    if (t.toAccountId) add(t.toAccountId, t.month, 'in', t.toAmount);
   }
   return idx;
 }

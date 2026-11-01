@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { Plus } from 'lucide-react';
 import { api, errorText } from '../lib/api';
 import type { Account, Category, Commitment, CommitmentPayment, Expense, Kind, LookupItem, LookupType, Share, SplitMode } from '../lib/types';
@@ -8,7 +8,7 @@ import { dateInMonth, money, monthLabel, thisMonth, todayStr } from '../lib/form
 import { useAuth } from '../context/AuthContext';
 import { useLookups } from '../context/LookupContext';
 import {
-  Button, DateInput, ErrorNote, Field, Modal, MonthInput, NumberInput, Select, Tabs, TextInput, useToast, type Option,
+  Button, DateInput, ErrorNote, Field, Modal, MonthInput, NumberInput, Select, Tabs, TextInput, cx, useToast, type Option,
 } from './ui';
 
 /** Last day an expense may be dated: the end of the current month (no advance expenses). */
@@ -296,10 +296,10 @@ export function CommitmentForm({ initial, defaultMonth, onSaved, onCancel }:
       <Field label="Payment reminder"><Select value={f.reminderDaysBefore} onChange={(v) => set('reminderDaysBefore', v)} options={REMINDER_OPTIONS} /></Field>
       <Field label="Notes"><TextInput value={f.notes} onChange={(v) => set('notes', v)} maxLength={500} /></Field>
       <ErrorNote message={error} />
-      <div className="flex justify-end gap-2 pt-1">
+      <FormFooter>
         <Button onClick={onCancel}>Cancel</Button>
         <Button type="submit" variant="primary" loading={busy}>{initial ? 'Save changes' : 'Add commitment'}</Button>
-      </div>
+      </FormFooter>
     </form>
   );
 }
@@ -395,84 +395,142 @@ export function ExpenseForm({ initial, month, onSaved, onCancel }:
       </Field>
       <Field label="Notes"><TextInput value={f.notes} onChange={(v) => set('notes', v)} maxLength={500} /></Field>
       <ErrorNote message={error} />
-      <div className="flex justify-end gap-2 pt-1">
+      <FormFooter>
         <Button onClick={onCancel}>Cancel</Button>
         <Button type="submit" variant="primary" loading={busy}>{initial ? 'Save changes' : 'Add expense'}</Button>
-      </div>
+      </FormFooter>
     </form>
   );
 }
 
 // ---------------- Mark a commitment paid ----------------
 
-/**
- * Records a commitment's payment for a month as an expense. Who paid matters
- * for common bills: it decides who owes whom in the settle-up.
- */
-/**
- * "Sajin 200 · 200 left": who has paid towards a commitment this month. On someone's
- * personal commitment, a payment by their partner shows as support.
- */
-export function PaidSoFar({ payment, ownerId }: { payment: CommitmentPayment; ownerId?: string | null }) {
-  const { memberName } = useAuth();
-  return (
-    <span className="text-[11px] text-stone-500">
-      {payment.contributions.map((p) => ownerId && p.userId !== ownerId
-        ? `${memberName(p.userId)} supported ${money(p.amount)}`
-        : `${memberName(p.userId)} ${money(p.amount)}`).join(' · ')}
-      {payment.remaining > 0 && <span className="text-amber-700"> · {money(payment.remaining)} left</span>}
-    </span>
-  );
-}
-
-/** Pay button label: your partner's own bill is "Support"; otherwise mark it paid (or pay the rest / early). */
-export function payLabel(c: { type: Kind; ownerId?: string | null; payment?: CommitmentPayment }, me: string, isCouple: boolean, early: boolean) {
-  if (isCouple && c.type === 'personal' && c.ownerId && c.ownerId !== me) return 'Support';
-  return c.payment?.paidAmount ? 'Pay rest' : early ? 'Pay early' : 'Mark paid';
+/** Buttons at the bottom of a form in a dialog: they stay in view while the form scrolls. */
+export function FormFooter({ children }: { children: ReactNode }) {
+  return <div className="sticky bottom-0 z-10 -mx-5 -mb-4 flex justify-end gap-2 border-t border-stone-100 bg-white px-5 py-3">{children}</div>;
 }
 
 type PayTarget = {
   id: string; title: string; type: Kind; ownerId?: string | null; amount: number; dueDay?: number; payment?: CommitmentPayment;
   split?: SplitMode | { mode: SplitMode }; shares?: Share[];
 };
-const splitModeOf = (t: PayTarget | null) => (typeof t?.split === 'string' ? t.split : t?.split?.mode) ?? 'equal';
 
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Where one person stands on a common commitment this month: their planned part,
+ * what they paid on the bill, sent to the partner (or joint account) and received
+ * from the partner. `due` is what they still have to pay on the bill: their own
+ * part plus any share handed to them.
+ */
+export function standing(c: PayTarget, userId: string) {
+  const part = c.shares?.find((x) => x.userId === userId)?.amount ?? 0;
+  const paid = c.payment?.contributions.find((p) => p.userId === userId)?.amount ?? 0;
+  const sent = (c.payment?.sent ?? []).filter((x) => x.fromUserId === userId).reduce((a, x) => a + x.amount, 0);
+  const received = (c.payment?.sent ?? []).filter((x) => x.toUserId === userId).reduce((a, x) => a + x.amount, 0);
+  const due = c.payment?.paid ? 0 : Math.min(c.payment?.remaining ?? c.amount, Math.max(0, r2(part + received - paid - sent)));
+  return { part, paid, sent, received, due, ownDone: paid + sent >= part - 0.005 };
+}
+
+/**
+ * Pay button label. Your partner's own bill: "Support". A common bill: pay your share,
+ * or the whole bill once your partner has sent you theirs.
+ */
+export function payLabel(c: PayTarget, me: string, isCouple: boolean, early: boolean) {
+  if (isCouple && c.type === 'personal' && c.ownerId && c.ownerId !== me) return 'Support';
+  if (isCouple && c.type === 'common' && c.shares) {
+    const s = standing(c, me);
+    if (s.received > 0 && s.due > 0) return 'Pay bill';
+    return s.ownDone ? 'Pay rest' : 'Pay my share';
+  }
+  return c.payment?.paidAmount ? 'Pay rest' : early ? 'Pay early' : 'Mark paid';
+}
+
+/**
+ * Who paid what this month: payments on the bill, shares sent to the partner or a
+ * joint account (undoable), and who still has to pay.
+ */
+export function WhoPaid({ c, onUndo, compact }: { c: PayTarget; onUndo?: (shareId: string) => void; compact?: boolean }) {
+  const { memberName, workspace, isCouple } = useAuth();
+  const p = c.payment;
+  const items: ReactNode[] = [];
+  for (const x of p?.contributions ?? []) {
+    const support = c.type === 'personal' && c.ownerId && x.userId !== c.ownerId;
+    items.push(<span key={`p${x.userId}`} className="text-brand-700">✓ {memberName(x.userId)} {support ? 'supported' : 'paid'} <span className="num">{money(x.amount)}</span></span>);
+  }
+  for (const x of p?.sent ?? []) {
+    items.push(
+      <span key={`s${x.id}`} className="inline-flex items-center gap-1 text-sky-700">
+        ↗ {memberName(x.fromUserId)} sent <span className="num">{money(x.amount)}</span> to {x.toUserId ? memberName(x.toUserId) : 'joint account'}
+        {onUndo && <button type="button" className="text-stone-400 hover:text-rose-600" title="Undo this share" aria-label="Undo this share" onClick={() => onUndo(x.id)}>×</button>}
+      </span>,
+    );
+  }
+  if (p && !p.paid) {
+    if (isCouple && c.type === 'common' && c.shares) {
+      for (const m of workspace?.members ?? []) {
+        const s = standing(c, m.userId);
+        if (s.due > 0) items.push(<span key={`d${m.userId}`} className="text-amber-700">{memberName(m.userId)} to pay <span className="num">{money(s.due)}</span></span>);
+      }
+    } else if (p.paidAmount > 0) {
+      items.push(<span key="left" className="text-amber-700"><span className="num">{money(p.remaining)}</span> left</span>);
+    }
+  }
+  if (!items.length) return <span className="text-xs text-stone-400">—</span>;
+  return <div className={cx('flex text-[11px] leading-4', compact ? 'flex-wrap gap-x-2' : 'flex-col gap-0.5')}>{items}</div>;
+}
+
+type PayMode = 'pay' | 'send';
+const PAY_MODES: { value: PayMode; label: string }[] = [{ value: 'pay', label: 'Pay the bill' }, { value: 'send', label: 'Send my share' }];
+
+/**
+ * Records a commitment's payment for a month as an expense. Who paid matters for
+ * common bills: it decides who owes whom in the settle-up. On a common bill a partner
+ * can instead send their share to the one who pays it (or into a joint account).
+ */
 export function PayCommitmentModal({ target, month, onClose, onPaid }: {
   target: PayTarget | null; month: string; onClose: () => void; onPaid: () => void;
 }) {
   const { user, isCouple, workspace, memberName } = useAuth();
+  const { label } = useLookups();
   const [settles, setSettles] = useState(false);
   const toast = useToast();
   const accounts = useApi<Account[]>(target ? '/accounts' : null);
+  const [mode, setMode] = useState<PayMode>('pay');
   const [paidBy, setPaidBy] = useState('');
   const [accountId, setAccountId] = useState('');
   const [amount, setAmount] = useState<number | null>(null);
+  const [sendAmount, setSendAmount] = useState<number | null>(null);
+  const [sendTo, setSendTo] = useState('');
   const [date, setDate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [lastId, setLastId] = useState<string | null>(null);
+  const me = user?.id ?? '';
+  const partner = workspace?.members.find((m) => m.userId !== me);
   const early = month > thisMonth(); // next month's bill paid ahead: dated today, counted in its own month
   const maxDate = early ? todayStr() : [dateInMonth(month, 31), lastExpenseDate()].sort()[0];
+  const shared = isCouple && target?.type === 'common' && !!target.shares;
   // Reset the fields whenever a different commitment is opened.
   if (target && target.id !== lastId) {
     setLastId(target.id);
-    // Common bill where you already paid your part: the rest is usually your partner's.
-    const paidAlready = target.payment?.contributions.map((p) => p.userId) ?? [];
-    const me = user?.id ?? '';
-    // Your own bill, or your partner's one you support: you pay. Common: whoever hasn't paid yet.
-    const payer = target.type === 'personal' ? (isCouple ? me : target.ownerId || me)
-      : paidAlready.includes(me) ? workspace?.members.find((m) => !paidAlready.includes(m.userId))?.userId ?? me
-      : me;
-    setPaidBy(payer);
     const left = target.payment?.paidAmount ? target.payment.remaining : target.amount;
-    // A custom or salary split: each pays their own part (minus what they already paid).
-    const part = splitModeOf(target) !== 'equal' ? target.shares?.find((x) => x.userId === payer)?.amount : undefined;
-    const own = part === undefined ? left : Math.round((part - (target.payment?.contributions.find((p) => p.userId === payer)?.amount ?? 0)) * 100) / 100;
-    setAmount(own > 0 ? Math.min(own, left) : left);
+    // Your own bill, or your partner's one you support: you pay. Common: you, unless your part is done and theirs isn't.
+    const payer = target.type === 'personal' ? (isCouple ? me : target.ownerId || me)
+      : !isCouple || !target.shares || standing(target, me).due > 0 ? me
+      : workspace?.members.find((m) => standing(target, m.userId).due > 0)?.userId ?? me;
+    setPaidBy(payer);
+    // A common bill: each pays their own part (plus any share sent to them), not the whole bill.
+    const due = isCouple && target.type === 'common' && target.shares ? standing(target, payer).due : 0;
+    setAmount(due > 0 ? Math.min(due, left) : left);
+    const mine = target.shares ? standing(target, me) : null;
+    setSendAmount(mine ? r2(Math.max(0, mine.part - mine.paid - mine.sent)) || null : null);
+    setSendTo(partner ? `user:${partner.userId}` : '');
+    setMode('pay');
     setSettles(false);
     setAccountId('');
-    const due = dateInMonth(month, target.dueDay ?? 1);
-    setDate(early || todayStr().startsWith(month) ? todayStr() : due <= maxDate ? due : maxDate);
+    const dueDate = dateInMonth(month, target.dueDay ?? 1);
+    setDate(early || todayStr().startsWith(month) ? todayStr() : dueDate <= maxDate ? dueDate : maxDate);
     setError(null);
   }
   const close = () => { setLastId(null); onClose(); };
@@ -480,14 +538,43 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
   const short = !!amount && amount < remaining - 0.005; // part of the bill: the rest can be paid later (e.g. by the partner)
   // Paying your partner's personal commitment is support: the cost is yours (not owed back).
   const supporting = isCouple && target?.type === 'personal' && !!target.ownerId && paidBy !== target.ownerId;
-  const planned = target?.type === 'common' && splitModeOf(target) !== 'equal' ? target.shares : undefined;
+  const sending = shared && mode === 'send';
+
+  // Where a share can go: the partner (any or a chosen account of theirs) or a joint account.
+  const sendOptions: Option[] = [
+    ...(partner ? [{ label: `${partner.displayName} (no account)`, value: `user:${partner.userId}` }] : []),
+    ...(accounts.data ?? [])
+      .filter((a) => !a.archived && a.group === 'cash' && (a.type === 'common' || a.ownerId === partner?.userId))
+      .map((a) => ({ label: `${a.type === 'common' ? 'Joint' : partner?.displayName} · ${a.name} · ${label('bank', a.bank)}`, value: `acct:${a.id}` })),
+  ];
+  const sendToName = sendTo.startsWith('user:') ? memberName(sendTo.slice(5))
+    : (accounts.data ?? []).find((a) => `acct:${a.id}` === sendTo)?.type === 'common' ? 'the joint account' : partner?.displayName ?? '';
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!target) return;
+    setError(null);
+    if (sending) {
+      if (!sendAmount || sendAmount <= 0) { setError('Enter the amount'); return; }
+      if (!sendTo) { setError('Choose who receives your share'); return; }
+      setBusy(true);
+      try {
+        await api.post(`/commitments/${target.id}/shares`, {
+          month, amount: sendAmount, date, fromAccountId: accountId || null,
+          ...(sendTo.startsWith('acct:') ? { toAccountId: sendTo.slice(5) } : { toUserId: sendTo.slice(5) }),
+        });
+        toast.success(`Sent ${money(sendAmount)} to ${sendToName} for ${target.title}`);
+        setLastId(null);
+        onPaid();
+      } catch (err) {
+        setError(errorText(err));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (!amount || amount <= 0) { setError('Enter the amount'); return; }
     setBusy(true);
-    setError(null);
     try {
       const final = short ? settles : true;
       await api.post(`/commitments/${target.id}/pay`, { month, paidBy, amount, date, accountId: accountId || null, settles: final });
@@ -501,47 +588,73 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
     }
   }
 
+  const title = sending ? `Send your share · “${target?.title ?? ''}” · ${monthLabel(month)}`
+    : supporting ? `Support ${memberName(target?.ownerId ?? null)} · “${target?.title ?? ''}” · ${monthLabel(month)}`
+    : `Mark “${target?.title ?? ''}” paid · ${monthLabel(month)}`;
+
   return (
-    <Modal open={!!target} onClose={close} title={supporting ? `Support ${memberName(target?.ownerId ?? null)} · “${target?.title ?? ''}” · ${monthLabel(month)}` : `Mark “${target?.title ?? ''}” paid · ${monthLabel(month)}`}>
+    <Modal open={!!target} onClose={close} title={title}>
       <form onSubmit={submit} className="space-y-3">
+        {shared && <Tabs<PayMode> value={mode} onChange={(m) => { setMode(m); setAccountId(''); setError(null); }} items={PAY_MODES} full />}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Amount (AED)"><NumberInput value={amount} onChange={setAmount} min={0.01} required /></Field>
-          <Field label="Date paid"><DateInput value={date} min={early ? todayStr() : `${month}-01`} max={maxDate} onChange={setDate} required /></Field>
+          {sending
+            ? <Field label="Amount (AED)"><NumberInput value={sendAmount} onChange={setSendAmount} min={0.01} required /></Field>
+            : <Field label="Amount (AED)"><NumberInput value={amount} onChange={setAmount} min={0.01} required /></Field>}
+          <Field label={sending ? 'Date sent' : 'Date paid'}><DateInput value={date} min={early ? todayStr() : `${month}-01`} max={maxDate} onChange={setDate} required /></Field>
         </div>
-        {early && <p className="rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-900">Paying early: dated today, but counted in {monthLabel(month)}’s budget and shown as paid for {monthLabel(month)}.</p>}
-        {planned && (
-          <p className="rounded-xl bg-violet-50 px-3 py-2 text-xs text-violet-900">Agreed split: {planned.map((x) => `${memberName(x.userId)} ${money(x.amount)}`).join(' · ')}</p>
+        {early && !sending && <p className="rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-900">Paying early: dated today, but counted in {monthLabel(month)}’s budget and shown as paid for {monthLabel(month)}.</p>}
+        {shared && target?.shares && (
+          <p className="rounded-xl bg-violet-50 px-3 py-2 text-xs text-violet-900">Split: {target.shares.map((x) => `${memberName(x.userId)} ${money(x.amount)}`).join(' · ')}</p>
         )}
-        {supporting && (
-          <p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-            {memberName(paidBy)} pays {memberName(target?.ownerId ?? null)}’s bill as support: it counts as {memberName(paidBy)}’s spending and is not owed back.
-          </p>
+        {target && (!!target.payment?.paidAmount || !!target.payment?.sent?.length) && (
+          <div className="rounded-xl border border-stone-200 px-3 py-2 text-xs text-stone-600"><span className="mb-0.5 block">So far:</span><WhoPaid c={target} compact /></div>
         )}
-        {!!target?.payment?.paidAmount && (
-          <p className="rounded-xl border border-stone-200 px-3 py-2 text-xs text-stone-600">Already paid: <PaidSoFar payment={target.payment} ownerId={target.type === 'personal' ? target.ownerId : null} /></p>
+        {sending ? (
+          <>
+            <p className="rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-900">
+              Your share goes to {sendToName || 'your partner'}, who pays the whole bill. It is not marked paid until the bill is paid; until then the settle-up shows {sendToName || 'they'} holding your money.
+            </p>
+            <Field label="Send to" hint="Choose an account to add the money to its balance.">
+              <Select value={sendTo} onChange={setSendTo} options={sendOptions} />
+            </Field>
+            <Field label="Sent from" hint="Optional. Keeps your account balance up to date.">
+              <AccountSelect accounts={accounts.data} value={accountId} onChange={setAccountId} ownerId={me} purpose="out" />
+            </Field>
+          </>
+        ) : (
+          <>
+            {supporting && (
+              <p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                {memberName(paidBy)} pays {memberName(target?.ownerId ?? null)}’s bill as support: it counts as {memberName(paidBy)}’s spending and is not owed back.
+              </p>
+            )}
+            {short && (
+              <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-stone-200 px-3 py-2 text-xs text-stone-600">
+                <input type="checkbox" className="mt-0.5 accent-brand-600" checked={settles} onChange={(e) => setSettles(e.target.checked)} />
+                <span>
+                  <b className="text-stone-800">Fully paid for {monthLabel(month)}</b> — the bill was smaller this month.
+                  {' '}Leave unticked if the rest ({money(remaining - (amount ?? 0))}) is still to be paid{isCouple && target?.type === 'common' ? ', e.g. by your partner' : ''}.
+                </span>
+              </label>
+            )}
+            {isCouple && (
+              <Field label="Paid by" hint={target?.type === 'common' ? 'For common bills this decides who owes whom: each person’s part follows the split.' : 'Someone other than the owner paying counts as support.'}>
+                <MemberSelect value={paidBy} onChange={(id) => {
+                  setPaidBy(id);
+                  if (target && shared) { const d = standing(target, id).due; if (d > 0) setAmount(Math.min(d, remaining)); }
+                }} />
+              </Field>
+            )}
+            <Field label="Paid from" hint="Optional. Keeps the account balance up to date.">
+              <AccountSelect accounts={accounts.data} value={accountId} onChange={setAccountId} ownerId={paidBy} purpose="out" />
+            </Field>
+          </>
         )}
-        {short && (
-          <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-stone-200 px-3 py-2 text-xs text-stone-600">
-            <input type="checkbox" className="mt-0.5 accent-brand-600" checked={settles} onChange={(e) => setSettles(e.target.checked)} />
-            <span>
-              <b className="text-stone-800">Fully paid for {monthLabel(month)}</b> — the bill was smaller this month.
-              {' '}Leave unticked if the rest ({money(remaining - (amount ?? 0))}) is still to be paid{isCouple && target?.type === 'common' ? ', e.g. by your partner' : ''}.
-            </span>
-          </label>
-        )}
-        {isCouple && (
-          <Field label="Paid by" hint={target?.type === 'common' ? 'For common bills this decides who owes whom: each person’s part follows the split.' : 'Someone other than the owner paying counts as support.'}>
-            <MemberSelect value={paidBy} onChange={setPaidBy} />
-          </Field>
-        )}
-        <Field label="Paid from" hint="Optional. Keeps the account balance up to date.">
-          <AccountSelect accounts={accounts.data} value={accountId} onChange={setAccountId} ownerId={target?.type === 'personal' ? paidBy : undefined} purpose="out" />
-        </Field>
         <ErrorNote message={error} />
-        <div className="flex justify-end gap-2">
+        <FormFooter>
           <Button onClick={close}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={busy}>{supporting ? 'Record support' : 'Record payment'}</Button>
-        </div>
+          <Button type="submit" variant="primary" loading={busy}>{sending ? 'Record share sent' : supporting ? 'Record support' : 'Record payment'}</Button>
+        </FormFooter>
       </form>
     </Modal>
   );

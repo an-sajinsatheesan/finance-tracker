@@ -6,6 +6,8 @@
  * - Common expenses are split equally (or by their commitment's split); each user's
  *   cost is their share, so the household total equals the sum of amounts (never double-counted).
  * - Paying a partner's personal commitment is support: the cost is the payer's.
+ * - A share sent to the partner who pays a common bill counts as paid by the sender;
+ *   a bill paid from a joint account counts as paid by whoever put money in for it.
  * - Planned commitments are separate from actual expenses.
  * - Expected income is separate from received income.
  * - Cash left = received income − actual outflow (my costs).
@@ -20,6 +22,7 @@ export interface ExpenseRow {
   id: string; month: string; date: string; amount: number; type: 'personal' | 'common'; category: string;
   customCategory?: string; paidBy: string; ownerId?: string | null; shares: { userId: string; amount: number }[];
   commitmentId?: string | null;
+  accountId?: string | null;
   settlesCommitment?: boolean | null;
 }
 export interface CommitmentRow extends CommitmentLike {
@@ -27,6 +30,8 @@ export interface CommitmentRow extends CommitmentLike {
   split?: SplitLike | null;
 }
 export interface AllocationRow { userId: string; month: string; amount: number }
+/** A partner's share of a common commitment sent before the bill is paid (toUserId empty: into a joint account). */
+export interface ContributionRow { id: string; commitmentId: string; month: string; date: string; fromUserId: string; toUserId?: string | null; toAccountId?: string | null; amount: number }
 
 export interface Dataset {
   memberIds: string[];
@@ -34,6 +39,9 @@ export interface Dataset {
   expenses: ExpenseRow[];
   commitments: CommitmentRow[];
   allocations: AllocationRow[];
+  contributions?: ContributionRow[];
+  /** Joint (common) accounts: bills paid from them are paid by the money put in. */
+  jointAccountIds?: string[];
 }
 
 /** 'common' = household view; otherwise a member's userId. */
@@ -56,6 +64,35 @@ export function plannedFor(c: CommitmentRow, month: string, scope: Scope, member
   if (c.type === 'personal') return c.ownerId === scope ? amount : 0;
   const idx = memberIds.indexOf(scope);
   return idx < 0 ? 0 : splitByWeights(amount, splitWeights(c.split, memberIds, income))[idx];
+}
+
+/**
+ * How much each person has paid towards common expenses in a month:
+ * - paid from their own account (or no account): the payer;
+ * - a share sent to the partner who pays: the sender (and less for the receiver);
+ * - paid from a joint account: whoever put money in for that bill, the rest by share.
+ */
+export function commonPaidBy(d: Dataset, month: string, common: ExpenseRow[]): Map<string, number> {
+  const paid = new Map(d.memberIds.map((id) => [id, 0]));
+  const add = (id: string, v: number) => { if (paid.has(id)) paid.set(id, (paid.get(id) ?? 0) + v); };
+  const joint = new Set(d.jointAccountIds ?? []);
+  const sent = (d.contributions ?? []).filter((x) => x.month === month);
+  const fromJoint = new Map<string, ExpenseRow[]>(); // by commitment ('' = not for a commitment)
+  for (const e of common) {
+    if (e.accountId && joint.has(e.accountId)) fromJoint.set(e.commitmentId ?? '', [...(fromJoint.get(e.commitmentId ?? '') ?? []), e]);
+    else add(e.paidBy, e.amount);
+  }
+  for (const [cid, list] of fromJoint) {
+    const total = list.reduce((a, e) => a + e.amount, 0);
+    const into = cid ? sent.filter((x) => !x.toUserId && x.commitmentId === cid) : [];
+    const put = into.reduce((a, x) => a + x.amount, 0);
+    const used = put > 0 ? Math.min(1, total / put) : 0;
+    for (const x of into) add(x.fromUserId, x.amount * used);
+    const rest = total - put * used;
+    if (rest > 0.004) for (const id of d.memberIds) add(id, (rest * list.reduce((a, e) => a + shareOf(e, id), 0)) / total);
+  }
+  for (const x of sent) if (x.toUserId) { add(x.fromUserId, x.amount); add(x.toUserId, -x.amount); }
+  return new Map([...paid].map(([k, v]) => [k, round2(v)]));
 }
 
 /** Actual cost of an expense for the scope (household: full amount). */
@@ -83,8 +120,9 @@ export function computeCards(d: Dataset, month: string, scope: Scope) {
   const plannedCommitments = sum(d.commitments.map((c) => plannedFor(c, month, scope, d.memberIds, income)));
 
   // Who paid vs who bears the cost of common expenses (settle-up between partners).
+  const paidBy = commonPaidBy(d, month, common);
   const members = d.memberIds.map((userId) => {
-    const paid = sum(common.filter((e) => e.paidBy === userId).map((e) => e.amount));
+    const paid = paidBy.get(userId) ?? 0;
     const share = sum(common.map((e) => shareOf(e, userId)));
     return { userId, commonPaid: paid, commonShare: share, balance: round2(paid - share) };
   });
@@ -169,9 +207,11 @@ export function computeCommitmentsDue(d: Dataset, month: string, scope: Scope) {
     .map((c) => {
       const amount = amountFor(c, month);
       const payment = paymentStatus(amount, d.expenses.filter((e) => e.month === month && e.commitmentId === c.id));
+      const sent = (d.contributions ?? []).filter((x) => x.month === month && x.commitmentId === c.id)
+        .map((x) => ({ id: x.id, fromUserId: x.fromUserId, toUserId: x.toUserId ?? null, toAccountId: x.toAccountId ?? null, amount: x.amount, date: x.date }));
       return {
         id: c.id, title: c.title, type: c.type, ownerId: c.ownerId ?? null, category: categoryLabel(c.category, c.customCategory), dueDay: c.dueDay ?? 1,
-        amount, myShare: plannedFor(c, month, scope, d.memberIds, income), paid: payment.paid, payment,
+        amount, myShare: plannedFor(c, month, scope, d.memberIds, income), paid: payment.paid, payment: { ...payment, sent },
         split: c.split?.mode ?? 'equal',
         shares: c.type === 'common' ? d.memberIds.map((userId) => ({ userId, amount: plannedFor(c, month, userId, d.memberIds, income) })) : undefined,
       };

@@ -362,6 +362,48 @@ d('API', () => {
     expect(aAfter.personalExpenses - after.personalExpenses).toBeCloseTo(120, 2);
   });
 
+  it('lets a partner send their share to the one who pays the bill, or into a joint account', async () => {
+    const bal = async () => Object.fromEntries((await request(app).get(`/api/summary?month=${month}&scope=common`).set(auth(tokenS))).body.cards.members.map((m: any) => [m.userId, m.balance]));
+    const accounts = (await request(app).get('/api/accounts').set(auth(tokenS))).body;
+    const enbd = accounts.find((a: any) => a.name === 'ENBD salary');
+    const joint = await request(app).post('/api/accounts').set(auth(tokenS)).send({
+      name: 'Joint', bank: 'ENBD', currency: 'AED', accountType: 'savings', type: 'common', openedMonth: month,
+    }).expect(201);
+    const enbdBefore = (await request(app).get(`/api/balances?month=${month}`).set(auth(tokenS))).body.accounts.find((a: any) => a.id === enbd.id).closing;
+    const start = await bal();
+
+    // Abhirami sends her 1500 into Sajin's account; he then pays the whole 3000 rent.
+    const rent = await request(app).post('/api/commitments').set(auth(tokenS)).send({
+      title: 'Flat rent', category: 'Rent', amount: 3000, type: 'common', startMonth: month, dueDay: 1,
+    }).expect(201);
+    const sent = await request(app).post(`/api/commitments/${rent.body.id}/shares`).set(auth(tokenA)).send({ month, amount: 1500, toAccountId: enbd.id }).expect(201);
+    expect(sent.body).toMatchObject({ fromUserId: abhiId, toUserId: sajinId, amount: 1500 });
+    const listed = (await request(app).get(`/api/commitments?month=${month}`).set(auth(tokenS))).body.find((x: any) => x.id === rent.body.id);
+    expect(listed.payment).toMatchObject({ paid: false, paidAmount: 0, sent: [{ fromUserId: abhiId, toUserId: sajinId, amount: 1500 }] });
+    const holding = await bal();
+    expect(holding[sajinId] - start[sajinId]).toBeCloseTo(-1500, 2); // Sajin holds her money until he pays
+    const enbdMid = (await request(app).get(`/api/balances?month=${month}`).set(auth(tokenS))).body.accounts.find((a: any) => a.id === enbd.id).closing;
+    expect(enbdMid - enbdBefore).toBeCloseTo(1500, 2);
+    await request(app).post(`/api/commitments/${rent.body.id}/pay`).set(auth(tokenS)).send({ month, amount: 3000, paidBy: sajinId }).expect(201);
+    const settled = await bal();
+    expect(settled[sajinId]).toBeCloseTo(start[sajinId], 2);
+    expect(settled[abhiId]).toBeCloseTo(start[abhiId], 2);
+
+    // Both put 50 into the joint account and the 100 bill is paid from it: nobody owes.
+    const gas = await request(app).post('/api/commitments').set(auth(tokenS)).send({
+      title: 'Cooking gas', category: 'Internet', amount: 100, type: 'common', startMonth: month, dueDay: 1,
+    }).expect(201);
+    await request(app).post(`/api/commitments/${gas.body.id}/shares`).set(auth(tokenA)).send({ month, amount: 50, toAccountId: joint.body.id }).expect(201);
+    const mine = await request(app).post(`/api/commitments/${gas.body.id}/shares`).set(auth(tokenS)).send({ month, amount: 50, toAccountId: joint.body.id }).expect(201);
+    await request(app).post(`/api/commitments/${gas.body.id}/pay`).set(auth(tokenS)).send({ month, paidBy: sajinId, accountId: joint.body.id }).expect(201);
+    const after = await bal();
+    expect(after[sajinId]).toBeCloseTo(start[sajinId], 2);
+    // Undoing Sajin's share: the joint money now came only from Abhirami's 50 plus a 50/50 rest, so he owes her 25.
+    await request(app).delete(`/api/commitments/${gas.body.id}/shares/${mine.body.id}`).set(auth(tokenS)).expect(200);
+    expect((await bal())[sajinId] - start[sajinId]).toBeCloseTo(-25, 2);
+    await request(app).post(`/api/commitments/${gas.body.id}/shares`).set(auth(tokenS)).send({ month, amount: 50, toUserId: sajinId }).expect(400); // not to yourself
+  });
+
   it('pays next month’s commitment early: dated today, counted in next month', async () => {
     const next = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 1)).toISOString().slice(0, 7);
     const c = await request(app).post('/api/commitments').set(auth(tokenS)).send({

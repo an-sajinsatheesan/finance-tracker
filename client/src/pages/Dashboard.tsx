@@ -11,7 +11,7 @@ import type { Cards, Summary } from '../lib/types';
 import { addMonths, compact, money, monthLabel, monthShort, thisMonth } from '../lib/format';
 import { C, CATEGORY_COLORS, OTHER_COLOR } from '../lib/chartColors';
 import { BlockSkeleton, Button, ErrorNote, Money, Page, PageHeader, Skeleton, StatSkeleton, Tabs, TypeBadge, cx, usePaging } from '../components/ui';
-import { PaidSoFar, PayCommitmentModal, payLabel } from '../components/forms';
+import { PayCommitmentModal, WhoPaid, payLabel } from '../components/forms';
 import { CategoryIcon } from '../components/CategoryIcon';
 
 type Member = Summary['cards']['members'][number];
@@ -356,7 +356,7 @@ export default function Dashboard() {
                         <div className={cx('truncate font-medium', d.paid && 'text-stone-500')}>{d.title}</div>
                         <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500">
                           {isCouple && <TypeBadge type={d.type} />} Due day {d.dueDay}
-                          {d.payment.paidAmount > 0 && (!d.paid || isCouple) && <PaidSoFar payment={d.payment} ownerId={d.type === 'personal' ? d.ownerId : null} />}
+                          {(d.payment.paidAmount > 0 || !!d.payment.sent?.length || (isCouple && d.type === 'common')) && <WhoPaid c={d} compact />}
                         </div>
                       </div>
                       <div className="text-right">

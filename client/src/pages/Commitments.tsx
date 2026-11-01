@@ -11,7 +11,7 @@ import { addMonths, categoryLabel, money, monthLabel, thisMonth } from '../lib/f
 import {
   Button, Empty, ErrorNote, Field, IconButton, Modal, Money, MonthInput, Page, PageHeader, TableCard, TableSkeleton, Tabs, TypeBadge, confirmAction, usePaging, useToast,
 } from '../components/ui';
-import { CommitmentForm, PaidSoFar, PayCommitmentModal, payLabel } from '../components/forms';
+import { CommitmentForm, PayCommitmentModal, WhoPaid, payLabel } from '../components/forms';
 import { SPLIT_LABEL } from '../lib/split';
 import { CategoryIcon } from '../components/CategoryIcon';
 
@@ -63,6 +63,12 @@ export default function Commitments() {
     onAccept: () => run(() => api.del(`/commitments/${c.id}`), `${c.title} deleted`),
   });
 
+  const askUndo = (c: Commitment, shareId: string) => confirmAction({
+    header: 'Undo this share?',
+    message: <p>The money sent towards “{c.title}” is removed from the record (and from any account balances it moved).</p>,
+    onAccept: () => run(() => api.del(`/commitments/${c.id}/shares/${shareId}`), 'Share removed'),
+  });
+
   return (
     <Page fill>
       <PageHeader
@@ -87,7 +93,7 @@ export default function Commitments() {
           dataKey="id"
           {...paging}
           size="small"
-          tableStyle={{ minWidth: '48rem' }}
+          tableStyle={{ minWidth: '56rem' }}
           emptyMessage={list.loading && !list.data ? <TableSkeleton cols={isCouple ? 7 : 5} /> : <Empty icon={<ReceiptText className="size-8" />} title={`No ${tab} commitments`}>
             {tab === 'active' && 'Add rent, EMIs (car, mobile…), bills and subscriptions. They carry over to every month automatically.'}
           </Empty>}
@@ -129,7 +135,6 @@ export default function Commitments() {
                 <div className="text-xs">
                   <span className="inline-flex items-center gap-1 text-brand-700"><CheckCircle2 className="size-3.5" /> Paid</span>
                   {c.payment.paidAmount !== amountIn(c) && <span className="num ml-1 text-stone-500">{money(c.payment.paidAmount)}</span>}
-                  {isCouple && <div><PaidSoFar payment={c.payment} ownerId={c.type === 'personal' ? c.ownerId : null} /></div>}
                 </div>
               )
               : future ? <span className="text-xs text-stone-400">Not started</span>
@@ -138,10 +143,10 @@ export default function Commitments() {
                   <Button size="sm" onClick={() => setPaying({ ...c, amount: amountIn(c) })} title={early ? `Pay ${monthLabel(month)}’s bill today` : undefined}>
                     {payLabel(c, user!.id, isCouple, early)}
                   </Button>
-                  {!!c.payment?.paidAmount && <PaidSoFar payment={c.payment} ownerId={c.type === 'personal' ? c.ownerId : null} />}
                 </div>
               )
           )} />
+          <Column header="Who paid" body={(c: Commitment) => (inMonth(c) && c.payment ? <WhoPaid c={{ ...c, amount: amountIn(c) }} onUndo={(id) => askUndo(c, id)} /> : <span className="text-xs text-stone-400">—</span>)} />
           <Column align="right" style={{ width: '7rem' }} body={(c: Commitment) => (
             <div className="whitespace-nowrap">
               <IconButton title="Edit" onClick={() => setEditing(c)}><Pencil className="size-3.5" /></IconButton>

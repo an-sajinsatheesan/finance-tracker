@@ -9,6 +9,8 @@ import {
   amountFor, paymentStatus, splitByWeights, splitWeights, statusAt, type CommitmentStatus, type PaymentLike, type SplitLike,
 } from './commitment.logic.js';
 import { assertMonthStarted, createExpense } from './expense.service.js';
+import { assertAccount } from './account.service.js';
+import { Account, Contribution } from '../models/index.js';
 
 type CreateInput = {
   title: string; category: string; customCategory: string; type: 'personal' | 'common';
@@ -51,7 +53,12 @@ export function plannedShares(c: any, month: string, members: string[], income: 
   return members.map((userId, i) => ({ userId, amount: parts[i] }));
 }
 
-export function serializeCommitment(c: any, refMonth = currentMonth(), payments?: PaymentLike[], shares?: { userId: string; amount: number }[]) {
+const toSent = (x: any) => ({
+  id: String(x._id), fromUserId: String(x.fromUserId), toUserId: x.toUserId ? String(x.toUserId) : null,
+  toAccountId: x.toAccountId ? String(x.toAccountId) : null, amount: x.amount, date: x.date,
+});
+
+export function serializeCommitment(c: any, refMonth = currentMonth(), payments?: PaymentLike[], shares?: { userId: string; amount: number }[], sent: any[] = []) {
   return {
     id: String(c._id),
     title: c.title,
@@ -70,22 +77,24 @@ export function serializeCommitment(c: any, refMonth = currentMonth(), payments?
     status: statusAt(c, refMonth) as CommitmentStatus,
     split: splitOf(c),
     ...(shares && c.type === 'common' && { shares }),
-    ...(payments && { payment: paymentStatus(amountFor(c, refMonth), payments) }),
+    ...(payments && { payment: { ...paymentStatus(amountFor(c, refMonth), payments), sent: sent.map(toSent) } }),
   };
 }
 
 /** Commitments as of a month, each with what has been paid towards it in that month. */
 export async function listCommitments(workspaceId: string, refMonth = currentMonth()) {
-  const [list, expenses, members, income] = await Promise.all([
+  const [list, expenses, members, income, contributions] = await Promise.all([
     commitmentRepository.list(workspaceId),
     expenseRepository.listActiveByMonth(workspaceId, refMonth),
     memberIds(workspaceId),
     incomeByMember(workspaceId, refMonth),
+    Contribution.find({ workspaceId, month: refMonth, status: 'active' }).sort({ date: 1, createdAt: 1 }).lean(),
   ]);
   return list.map((c) => serializeCommitment(
     c, refMonth,
     expenses.filter((e) => String(e.commitmentId) === String(c._id)).map(toPayment),
     plannedShares(c, refMonth, members, income),
+    contributions.filter((x) => String(x.commitmentId) === String(c._id)),
   ));
 }
 
@@ -171,6 +180,7 @@ export async function deleteCommitment(workspaceId: string, id: string) {
   const doc = await commitmentRepository.findById(workspaceId, id);
   if (!doc) throw notFound('Commitment');
   const unlinked = await expenseRepository.unlinkCommitment(workspaceId, id);
+  await Contribution.updateMany({ workspaceId, commitmentId: id }, { $set: { status: 'archived' } });
   await commitmentRepository.delete(workspaceId, id);
   return { id, deleted: true, unlinkedPayments: unlinked };
 }
@@ -224,4 +234,54 @@ export async function payCommitment(
     month: input.month,
     settlesCommitment: settles,
   });
+}
+
+/**
+ * Sends a partner's share of a common commitment to whoever pays the bill: the
+ * other partner (optionally into one of their accounts) or a joint account. The
+ * bill stays unpaid until it is paid; the settle-up counts the share as paid by the sender.
+ */
+export async function sendShare(
+  workspaceId: string,
+  userId: string,
+  id: string,
+  input: { month: string; amount: number; date?: string; fromUserId?: string; fromAccountId?: string | null; toUserId?: string | null; toAccountId?: string | null },
+) {
+  const early = input.month === addMonths(currentMonth(), 1);
+  if (!early) assertMonthStarted(input.month);
+  const c = await commitmentRepository.findById(workspaceId, id);
+  if (!c) throw notFound('Commitment');
+  if (c.type !== 'common') throw badRequest('Only a common commitment’s share can be sent to your partner');
+  const from = input.fromUserId ?? userId;
+  await assertMember(workspaceId, from, 'fromUserId');
+  await assertAccount(workspaceId, input.fromAccountId);
+  let to = input.toUserId ?? null;
+  if (input.toAccountId) {
+    const acc = await Account.findOne({ _id: input.toAccountId, workspaceId }).lean();
+    if (!acc) throw badRequest('Unknown account');
+    to = acc.type === 'common' ? null : String(acc.ownerId); // a joint account belongs to both
+  } else if (!to) {
+    throw badRequest('Choose who receives the share');
+  }
+  if (to) await assertMember(workspaceId, to, 'toUserId');
+  if (to === from) throw badRequest('Send the share to your partner or a joint account');
+  if (input.fromAccountId && input.fromAccountId === input.toAccountId) throw badRequest('Choose two different accounts');
+  const date = early
+    ? today()
+    : input.date && input.date.startsWith(input.month) ? input.date : today().startsWith(input.month) ? today() : dateInMonth(input.month, c.dueDay ?? 1);
+  const doc = await Contribution.create({
+    workspaceId, commitmentId: id, month: input.month, date, fromUserId: from, toUserId: to ?? undefined,
+    fromAccountId: input.fromAccountId || undefined, toAccountId: input.toAccountId || undefined,
+    amount: round2(input.amount), createdBy: userId,
+  });
+  return toSent(doc.toObject());
+}
+
+/** Undoes a share sent by mistake. */
+export async function cancelShare(workspaceId: string, id: string, contributionId: string) {
+  const doc = await Contribution.findOne({ _id: contributionId, workspaceId, commitmentId: id, status: 'active' });
+  if (!doc) throw notFound('Share');
+  doc.status = 'archived';
+  await doc.save();
+  return { id: contributionId, archived: true };
 }

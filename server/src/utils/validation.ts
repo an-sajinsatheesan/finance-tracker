@@ -136,6 +136,17 @@ export const commitmentPaySchema = z.object({
   settles: z.boolean().optional(),
 });
 
+/** A partner's share of a common commitment sent to the partner who pays it, or into a joint account. */
+export const commitmentShareSchema = z.object({
+  month,
+  amount: positiveMoney,
+  date: date.optional(),
+  fromUserId: objectId.optional(),
+  fromAccountId: objectId.optional().nullable(),
+  toUserId: objectId.optional().nullable(),
+  toAccountId: objectId.optional().nullable(),
+});
+
 export const expenseCreateSchema = z
   .object({
     date,

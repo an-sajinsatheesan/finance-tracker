@@ -3,7 +3,7 @@ import { badRequest, notFound } from '../utils/AppError.js';
 import { round2 } from '../utils/money.js';
 import { addMonths } from '../utils/month.js';
 import { ACCOUNT_GROUPS, type AccountGroup } from '../utils/lookups.js';
-import { Account, AccountBalance, Expense, Income, Lookup, Transfer } from '../models/index.js';
+import { Account, AccountBalance, Contribution, Expense, Income, Lookup, Transfer } from '../models/index.js';
 import { assertMember, ensureMonthIncome, getWorkspace } from './workspace.service.js';
 import { assertLookup } from './lookup.service.js';
 import { balanceAt as latestBalance, computeWealth, type AccountRow, type BalanceRow } from './wealth.logic.js';
@@ -216,10 +216,11 @@ const isOpeningBalance = (b: { opening?: boolean | null; month: string }, opened
 /** Income, expenses and transfers linked to the workspace's accounts, up to the end of `month`. */
 async function loadLinkedMoney(workspaceId: string, accountIds: string[], month: string) {
   // Income for next month's budget can already be in the bank (paid at the end of this month).
-  const [incomes, expenses, transfers] = await Promise.all([
+  const [incomes, expenses, transfers, contributions] = await Promise.all([
     Income.find({ workspaceId, month: { $lte: addMonths(month, 1) }, status: { $ne: 'archived' } }).lean(),
     Expense.find({ workspaceId, month: { $lte: month }, status: 'active' }).lean(),
     Transfer.find({ workspaceId, status: 'active', month: { $lte: month } }).lean(),
+    Contribution.find({ workspaceId, status: 'active', date: { $lte: `${month}-31` } }).lean(),
   ]);
   const idSet = new Set(accountIds);
   const linked = (id: unknown) => (id && idSet.has(String(id)) ? String(id) : null);
@@ -234,7 +235,11 @@ async function loadLinkedMoney(workspaceId: string, accountIds: string[], month:
     })),
     transfers: transfers
       .filter((t) => idSet.has(String(t.fromAccountId)) && idSet.has(String(t.toAccountId)))
-      .map((t) => ({ month: t.month, fromAccountId: String(t.fromAccountId), toAccountId: String(t.toAccountId), amount: t.amount, toAmount: t.toAmount, fee: t.fee ?? 0 })),
+      .map((t) => ({ month: t.month, fromAccountId: String(t.fromAccountId), toAccountId: String(t.toAccountId), amount: t.amount, toAmount: t.toAmount, fee: t.fee ?? 0 }))
+      // A partner's share of a bill sent to the other (or a joint account) moves money on the day it was sent.
+      .concat(contributions
+        .filter((c) => linked(c.fromAccountId) || linked(c.toAccountId))
+        .map((c) => ({ month: c.date.slice(0, 7), fromAccountId: linked(c.fromAccountId) ?? '', toAccountId: linked(c.toAccountId) ?? '', amount: c.amount, toAmount: c.amount, fee: 0 }))),
   };
 }
 

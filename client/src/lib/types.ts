@@ -37,7 +37,12 @@ export type SplitMode = 'equal' | 'custom' | 'income';
 export interface Share { userId: string; amount: number }
 export interface CommitmentSplit { mode: SplitMode; shares?: Share[] }
 
-export interface CommitmentPayment { paidAmount: number; remaining: number; paid: boolean; contributions: { userId: string; amount: number }[] }
+/** A partner's share sent to the one who pays the bill (toUserId empty: into a joint account). */
+export interface SentShare { id: string; fromUserId: string; toUserId: string | null; toAccountId: string | null; amount: number; date: string }
+export interface CommitmentPayment {
+  paidAmount: number; remaining: number; paid: boolean; contributions: { userId: string; amount: number }[];
+  sent?: SentShare[];
+}
 export interface Commitment {
   id: string; title: string; category: Category; customCategory: string; type: Kind; ownerId: string | null;
   amount: number; amountHistory: { fromMonth: string; amount: number }[]; startMonth: string; endMonth: string | null;

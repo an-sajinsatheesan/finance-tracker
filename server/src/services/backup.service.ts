@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppError, badRequest, notFound } from '../utils/AppError.js';
 import { round2, sum } from '../utils/money.js';
 import {
-  Account, AccountBalance, Backup, Commitment, Expense, Goal, GoalAllocation, Income, IncomeMonth, Lookup, Transfer, User, Workspace,
+  Account, AccountBalance, Backup, Commitment, Contribution, Expense, Goal, GoalAllocation, Income, IncomeMonth, Lookup, Transfer, User, Workspace,
 } from '../models/index.js';
 
 export const BACKUP_APP = 'couple-finance-tracker';
@@ -22,6 +22,7 @@ const COLLECTIONS = {
   accounts: Account,
   accountBalances: AccountBalance,
   transfers: Transfer,
+  contributions: Contribution, // partners' shares of common bills sent to each other
 } as const satisfies Record<string, Model<any>>;
 type CollectionKey = keyof typeof COLLECTIONS;
 
@@ -94,6 +95,7 @@ const backupSchema = z.object({
     accounts: z.array(base.extend({ name: z.string(), bank: z.string(), currency: z.string(), accountType: z.string(), type: z.enum(['personal', 'common']), openedMonth: monthStr })).default([]),
     accountBalances: z.array(base.extend({ accountId: oid, month: monthStr, balance: num })).default([]),
     transfers: z.array(base.extend({ fromAccountId: oid, toAccountId: oid, date: dateStr, month: monthStr, amount: num, toAmount: num })).default([]),
+    contributions: z.array(base.extend({ commitmentId: oid, fromUserId: oid, month: monthStr, date: dateStr, amount: num })).default([]),
   }),
 });
 export type BackupFile = z.infer<typeof backupSchema>;
@@ -180,7 +182,7 @@ export async function validateBackup(raw: unknown, workspaceId: string): Promise
 
 /** Rewrites workspace and user ids so a backup can be restored into the current workspace. */
 function remap(b: BackupFile, workspaceId: string, userMap: Map<string, string>): BackupFile {
-  const userKeys = new Set(['userId', 'paidBy', 'ownerId', 'createdBy', 'archivedBy', 'updatedBy']);
+  const userKeys = new Set(['userId', 'paidBy', 'ownerId', 'createdBy', 'archivedBy', 'updatedBy', 'fromUserId', 'toUserId']);
   const walk = (v: unknown, key?: string): unknown => {
     if (Array.isArray(v)) return v.map((x) => walk(x));
     if (v && typeof v === 'object') {

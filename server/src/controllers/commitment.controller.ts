@@ -31,3 +31,10 @@ export async function pay(req: Request, res: Response) {
   const u = authUser(req);
   res.status(201).json(await svc.payCommitment(u.workspaceId, u.id, req.params.id, req.body));
 }
+export async function sendShare(req: Request, res: Response) {
+  const u = authUser(req);
+  res.status(201).json(await svc.sendShare(u.workspaceId, u.id, req.params.id, req.body));
+}
+export async function cancelShare(req: Request, res: Response) {
+  res.json(await svc.cancelShare(authUser(req).workspaceId, req.params.id, req.params.shareId));
+}

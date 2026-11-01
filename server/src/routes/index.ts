@@ -58,6 +58,8 @@ router.post('/commitments/:id/end', body(v.commitmentEndSchema), h(commitments.e
 router.post('/commitments/:id/reactivate', h(commitments.reactivate));
 router.post('/commitments/:id/archive', h(commitments.archive));
 router.post('/commitments/:id/pay', body(v.commitmentPaySchema), h(commitments.pay));
+router.post('/commitments/:id/shares', body(v.commitmentShareSchema), h(commitments.sendShare));
+router.delete('/commitments/:id/shares/:shareId', h(commitments.cancelShare));
 router.delete('/commitments/:id', h(commitments.remove));
 router.get('/reminders', h(reminders.list));
 

@@ -5,6 +5,7 @@ import { expenseRepository } from '../repositories/expense.repository.js';
 import { commitmentRepository } from '../repositories/commitment.repository.js';
 import { goalRepository } from '../repositories/goal.repository.js';
 import { ensureMonthIncome, memberIds } from './workspace.service.js';
+import { Account, Contribution } from '../models/index.js';
 import {
   computeBudgetVsActual, computeCards, computeCommitmentsDue, computeDaily, computeTrend, type Dataset,
 } from './summary.logic.js';
@@ -16,11 +17,13 @@ export async function getSummary(workspaceId: string, month: string, scope: stri
   if (scope !== 'common' && !members.includes(scope)) throw badRequest('Unknown scope');
   await ensureMonthIncome(workspaceId, month);
   const months = monthRange(month, TREND_MONTHS);
-  const [incomes, expenses, commitments, allocations] = await Promise.all([
+  const [incomes, expenses, commitments, allocations, contributions, joint] = await Promise.all([
     incomeRepository.listByMonths(workspaceId, months),
     expenseRepository.listActiveByMonths(workspaceId, months),
     commitmentRepository.listOverlapping(workspaceId, months[0], month),
     goalRepository.listActiveAllocationsByMonths(workspaceId, months),
+    Contribution.find({ workspaceId, month: { $in: months }, status: 'active' }).lean(),
+    Account.find({ workspaceId, type: 'common' }).select('_id').lean(),
   ]);
   const data: Dataset = {
     memberIds: members,
@@ -30,6 +33,7 @@ export async function getSummary(workspaceId: string, month: string, scope: stri
       customCategory: e.customCategory, paidBy: String(e.paidBy), ownerId: e.ownerId ? String(e.ownerId) : null,
       shares: e.shares.map((s) => ({ userId: String(s.userId), amount: s.amount })),
       commitmentId: e.commitmentId ? String(e.commitmentId) : null,
+      accountId: e.accountId ? String(e.accountId) : null,
       settlesCommitment: e.settlesCommitment,
     })),
     commitments: commitments.map((c) => ({
@@ -39,6 +43,11 @@ export async function getSummary(workspaceId: string, month: string, scope: stri
       amountHistory: c.amountHistory, startMonth: c.startMonth, endMonth: c.endMonth, archived: c.archived,
     })),
     allocations: allocations.map((a) => ({ userId: String(a.userId), month: a.month, amount: a.amount })),
+    contributions: contributions.map((x) => ({
+      id: String(x._id), commitmentId: String(x.commitmentId), month: x.month, date: x.date, fromUserId: String(x.fromUserId),
+      toUserId: x.toUserId ? String(x.toUserId) : null, toAccountId: x.toAccountId ? String(x.toAccountId) : null, amount: x.amount,
+    })),
+    jointAccountIds: joint.map((a) => String(a._id)),
   };
   return {
     month,
