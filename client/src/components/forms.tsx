@@ -407,7 +407,7 @@ export function ExpenseForm({ initial, month, onSaved, onCancel }:
 
 /** Buttons at the bottom of a form in a dialog: they stay in view while the form scrolls. */
 export function FormFooter({ children }: { children: ReactNode }) {
-  return <div className="sticky bottom-0 z-10 -mx-5 -mb-4 flex justify-end gap-2 border-t border-stone-100 bg-white px-5 py-3">{children}</div>;
+  return <div className="sticky -bottom-4 z-10 -mx-5 -mb-4 flex justify-end gap-2 border-t border-stone-100 bg-white px-5 py-3">{children}</div>;
 }
 
 type PayTarget = {
