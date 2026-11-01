@@ -3,16 +3,36 @@ import { round2 } from '../utils/money.js';
 import { addMonths, currentMonth, dateInMonth, today } from '../utils/month.js';
 import { commitmentRepository } from '../repositories/commitment.repository.js';
 import { expenseRepository } from '../repositories/expense.repository.js';
-import { assertMember } from './workspace.service.js';
+import { assertMember, incomeByMember, memberIds } from './workspace.service.js';
 import { assertLookup } from './lookup.service.js';
-import { amountFor, paymentStatus, statusAt, type CommitmentStatus, type PaymentLike } from './commitment.logic.js';
+import {
+  amountFor, paymentStatus, splitByWeights, splitWeights, statusAt, type CommitmentStatus, type PaymentLike, type SplitLike,
+} from './commitment.logic.js';
 import { assertMonthStarted, createExpense } from './expense.service.js';
 
 type CreateInput = {
   title: string; category: string; customCategory: string; type: 'personal' | 'common';
   ownerId?: string | null; amount: number; startMonth: string; endMonth?: string | null; dueDay: number; notes: string;
   reminderDaysBefore?: number | null;
+  split?: SplitLike;
 };
+
+type Split = { mode: 'equal' | 'custom' | 'income'; shares?: { userId: string; amount: number }[] };
+
+/** Validates a common commitment's split; personal commitments have none. */
+async function cleanSplit(workspaceId: string, type: string, split: Split | undefined | null) {
+  if (type !== 'common' || !split || split.mode === 'equal') return undefined;
+  if (split.mode === 'income') return { mode: 'income' as const };
+  const ids = await memberIds(workspaceId);
+  const shares = (split.shares ?? []).filter((x) => ids.includes(x.userId)).map((x) => ({ userId: x.userId, amount: round2(x.amount) }));
+  if (!shares.some((x) => x.amount > 0)) throw badRequest('Enter how much each person pays');
+  return { mode: 'custom' as const, shares };
+}
+
+const splitOf = (c: any): Split => ({
+  mode: c.type === 'common' && c.split?.mode ? c.split.mode : 'equal',
+  ...(c.split?.mode === 'custom' && { shares: (c.split.shares ?? []).map((x: any) => ({ userId: String(x.userId), amount: x.amount })) }),
+});
 
 /** Ensures the first version starts exactly at startMonth and versions are sorted. */
 export function normalizeHistory(history: { fromMonth: string; amount: number }[], startMonth: string) {
@@ -25,7 +45,13 @@ export function normalizeHistory(history: { fromMonth: string; amount: number }[
 const toPayment = (e: { amount: number; paidBy: unknown; settlesCommitment?: boolean | null }): PaymentLike =>
   ({ amount: e.amount, paidBy: String(e.paidBy), settlesCommitment: e.settlesCommitment });
 
-export function serializeCommitment(c: any, refMonth = currentMonth(), payments?: PaymentLike[]) {
+/** Each member's planned part of a common commitment in a month (by its split). */
+export function plannedShares(c: any, month: string, members: string[], income: Record<string, number>) {
+  const parts = splitByWeights(amountFor(c, month), splitWeights(splitOf(c), members, income));
+  return members.map((userId, i) => ({ userId, amount: parts[i] }));
+}
+
+export function serializeCommitment(c: any, refMonth = currentMonth(), payments?: PaymentLike[], shares?: { userId: string; amount: number }[]) {
   return {
     id: String(c._id),
     title: c.title,
@@ -42,17 +68,25 @@ export function serializeCommitment(c: any, refMonth = currentMonth(), payments?
     reminderDaysBefore: c.reminderDaysBefore === undefined ? 3 : c.reminderDaysBefore,
     notes: c.notes,
     status: statusAt(c, refMonth) as CommitmentStatus,
+    split: splitOf(c),
+    ...(shares && c.type === 'common' && { shares }),
     ...(payments && { payment: paymentStatus(amountFor(c, refMonth), payments) }),
   };
 }
 
 /** Commitments as of a month, each with what has been paid towards it in that month. */
 export async function listCommitments(workspaceId: string, refMonth = currentMonth()) {
-  const [list, expenses] = await Promise.all([
+  const [list, expenses, members, income] = await Promise.all([
     commitmentRepository.list(workspaceId),
     expenseRepository.listActiveByMonth(workspaceId, refMonth),
+    memberIds(workspaceId),
+    incomeByMember(workspaceId, refMonth),
   ]);
-  return list.map((c) => serializeCommitment(c, refMonth, expenses.filter((e) => String(e.commitmentId) === String(c._id)).map(toPayment)));
+  return list.map((c) => serializeCommitment(
+    c, refMonth,
+    expenses.filter((e) => String(e.commitmentId) === String(c._id)).map(toPayment),
+    plannedShares(c, refMonth, members, income),
+  ));
 }
 
 export async function createCommitment(workspaceId: string, userId: string, input: CreateInput) {
@@ -70,6 +104,7 @@ export async function createCommitment(workspaceId: string, userId: string, inpu
     endMonth: input.endMonth ?? null,
     dueDay: input.dueDay,
     reminderDaysBefore: input.reminderDaysBefore === undefined ? 3 : input.reminderDaysBefore,
+    split: await cleanSplit(workspaceId, input.type, input.split as Split),
     notes: input.notes,
     createdBy: userId,
   });
@@ -93,6 +128,8 @@ export async function updateCommitment(workspaceId: string, id: string, input: R
   doc.type = type;
   doc.set('ownerId', type === 'personal' ? ownerId : undefined);
   if (doc.category !== 'Custom') doc.customCategory = '';
+  if (type !== 'common') doc.set('split', undefined);
+  else if (input.split !== undefined) doc.set('split', await cleanSplit(workspaceId, type, input.split));
 
   let history = doc.amountHistory.map((v) => ({ fromMonth: v.fromMonth, amount: v.amount }));
   if (input.amount !== undefined) {

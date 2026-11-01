@@ -35,6 +35,7 @@ export async function getSummary(workspaceId: string, month: string, scope: stri
     commitments: commitments.map((c) => ({
       id: String(c._id), title: c.title, type: c.type, ownerId: c.ownerId ? String(c.ownerId) : null,
       category: c.category, customCategory: c.customCategory, dueDay: c.dueDay ?? 1,
+      split: c.split?.mode ? { mode: c.split.mode, shares: (c.split.shares ?? []).map((x) => ({ userId: String(x.userId), amount: x.amount ?? 0 })) } : null,
       amountHistory: c.amountHistory, startMonth: c.startMonth, endMonth: c.endMonth, archived: c.archived,
     })),
     allocations: allocations.map((a) => ({ userId: String(a.userId), month: a.month, amount: a.amount })),

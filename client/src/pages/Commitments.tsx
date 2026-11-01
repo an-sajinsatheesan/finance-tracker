@@ -11,14 +11,15 @@ import { addMonths, categoryLabel, money, monthLabel, thisMonth } from '../lib/f
 import {
   Button, Empty, ErrorNote, Field, IconButton, Modal, Money, MonthInput, Page, PageHeader, TableCard, TableSkeleton, Tabs, TypeBadge, confirmAction, usePaging, useToast,
 } from '../components/ui';
-import { CommitmentForm, PaidSoFar, PayCommitmentModal } from '../components/forms';
+import { CommitmentForm, PaidSoFar, PayCommitmentModal, payLabel } from '../components/forms';
+import { SPLIT_LABEL } from '../lib/split';
 import { CategoryIcon } from '../components/CategoryIcon';
 
 type Tab = 'active' | 'scheduled' | 'ended';
 
 export default function Commitments() {
   const { month } = useMonth();
-  const { memberName, workspace, isCouple } = useAuth();
+  const { memberName, workspace, isCouple, user } = useAuth();
   const toast = useToast();
   const list = useApi<Commitment[]>(`/commitments?month=${month}`);
   // Next month's commitments can be paid early; months after that haven't started.
@@ -45,7 +46,6 @@ export default function Commitments() {
     for (const x of v) if (x.fromMonth <= month) a = x.amount;
     return a;
   };
-  const n = workspace?.members.length ?? 2;
   const plannedTotal = all.filter(inMonth).reduce((a, c) => a + amountIn(c), 0);
   const reloadAll = () => list.reload();
 
@@ -111,7 +111,12 @@ export default function Commitments() {
           )} />}
           <Column header="Monthly" align="right" body={(c: Commitment) => <Money value={inMonth(c) ? amountIn(c) : c.amount} className="font-medium" />} />
           {isCouple && <Column header="Per person" align="right" body={(c: Commitment) => (
-            <span className="text-xs text-stone-500">{c.type === 'common' ? <Money value={(inMonth(c) ? amountIn(c) : c.amount) / n} /> : '—'}</span>
+            c.type !== 'common' ? <span className="text-xs text-stone-500">—</span> : (
+              <div className="text-[11px] leading-4 text-stone-500" title={`Split: ${SPLIT_LABEL[c.split?.mode ?? 'equal']}`}>
+                {(c.shares ?? []).map((x) => <div key={x.userId}>{memberName(x.userId)} <span className="num text-stone-700">{money(x.amount)}</span></div>)}
+                {c.split?.mode && c.split.mode !== 'equal' && <div className="text-violet-700">{SPLIT_LABEL[c.split.mode]}</div>}
+              </div>
+            )
           )} />}
           <Column header="Period" body={(c: Commitment) => (
             <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs text-stone-600">
@@ -124,15 +129,16 @@ export default function Commitments() {
                 <div className="text-xs">
                   <span className="inline-flex items-center gap-1 text-brand-700"><CheckCircle2 className="size-3.5" /> Paid</span>
                   {c.payment.paidAmount !== amountIn(c) && <span className="num ml-1 text-stone-500">{money(c.payment.paidAmount)}</span>}
+                  {isCouple && <div><PaidSoFar payment={c.payment} ownerId={c.type === 'personal' ? c.ownerId : null} /></div>}
                 </div>
               )
               : future ? <span className="text-xs text-stone-400">Not started</span>
               : (
                 <div className="flex items-center gap-2">
                   <Button size="sm" onClick={() => setPaying({ ...c, amount: amountIn(c) })} title={early ? `Pay ${monthLabel(month)}’s bill today` : undefined}>
-                    {c.payment?.paidAmount ? 'Pay rest' : early ? 'Pay early' : 'Mark paid'}
+                    {payLabel(c, user!.id, isCouple, early)}
                   </Button>
-                  {!!c.payment?.paidAmount && <PaidSoFar payment={c.payment} />}
+                  {!!c.payment?.paidAmount && <PaidSoFar payment={c.payment} ownerId={c.type === 'personal' ? c.ownerId : null} />}
                 </div>
               )
           )} />

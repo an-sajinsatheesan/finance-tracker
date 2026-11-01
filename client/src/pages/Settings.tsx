@@ -80,7 +80,7 @@ function MembersPanel() {
         <Users className="mt-0.5 size-4 text-brand-700" />
         <div>
           <h2 className="text-sm font-semibold">Members</h2>
-          <p className="text-xs text-stone-500">{workspace?.mode === 'couple' ? 'Common expenses are split 50/50 between the two of you.' : 'Personal workspace. Invite a partner to share common expenses.'}</p>
+          <p className="text-xs text-stone-500">{workspace?.mode === 'couple' ? 'Common expenses are split 50/50 between the two of you; a common commitment can use custom amounts or a salary split.' : 'Personal workspace. Invite a partner to share common expenses.'}</p>
         </div>
       </div>
       <ul className="mt-3 divide-y divide-stone-100">

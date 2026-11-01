@@ -329,6 +329,39 @@ d('API', () => {
     await request(app).post(`/api/commitments/${c.body.id}/pay`).set(auth(tokenS)).send({ month }).expect(400);
   });
 
+  it('splits a common commitment by agreed amounts, and records support for a partner’s bill', async () => {
+    const before = (await request(app).get(`/api/summary?month=${month}&scope=${abhiId}`).set(auth(tokenA))).body.cards;
+    const c = await request(app).post('/api/commitments').set(auth(tokenS)).send({
+      title: 'Mobile plan', category: 'Internet', amount: 350, type: 'common', startMonth: month, dueDay: 1,
+      split: { mode: 'custom', shares: [{ userId: sajinId, amount: 150 }, { userId: abhiId, amount: 200 }] },
+    }).expect(201);
+    const listed = (await request(app).get(`/api/commitments?month=${month}`).set(auth(tokenS))).body.find((x: any) => x.id === c.body.id);
+    expect(listed.split.mode).toBe('custom');
+    expect(listed.shares).toEqual([{ userId: sajinId, amount: 150 }, { userId: abhiId, amount: 200 }]);
+    const due = (await request(app).get(`/api/summary?month=${month}&scope=${abhiId}`).set(auth(tokenA))).body.commitmentsDue.find((x: any) => x.id === c.body.id);
+    expect(due.myShare).toBe(200);
+    // Each pays their own part: nobody owes anything for it.
+    await request(app).post(`/api/commitments/${c.body.id}/pay`).set(auth(tokenS)).send({ month, amount: 150, paidBy: sajinId }).expect(201);
+    await request(app).post(`/api/commitments/${c.body.id}/pay`).set(auth(tokenA)).send({ month, paidBy: abhiId }).expect(201);
+    const after = (await request(app).get(`/api/summary?month=${month}&scope=${abhiId}`).set(auth(tokenA))).body.cards;
+    const bal = (cards: any) => cards.members.find((m: any) => m.userId === abhiId).balance;
+    expect(bal(after)).toBeCloseTo(bal(before), 2);
+    expect(after.commonShare - before.commonShare).toBeCloseTo(200, 2);
+
+    // Abhirami pays Sajin's personal commitment: it is paid, and the cost is hers.
+    const p = await request(app).post('/api/commitments').set(auth(tokenS)).send({
+      title: 'Sajin phone EMI', category: 'Internet', amount: 120, type: 'personal', ownerId: sajinId, startMonth: month, dueDay: 1,
+    }).expect(201);
+    const sBefore = (await request(app).get(`/api/summary?month=${month}&scope=${sajinId}`).set(auth(tokenS))).body.cards;
+    await request(app).post(`/api/commitments/${p.body.id}/pay`).set(auth(tokenA)).send({ month, paidBy: abhiId }).expect(201);
+    const sAfter = (await request(app).get(`/api/summary?month=${month}&scope=${sajinId}`).set(auth(tokenS))).body;
+    expect(sAfter.cards.personalExpenses).toBe(sBefore.personalExpenses);
+    expect(sAfter.commitmentsDue.find((x: any) => x.id === p.body.id)).toMatchObject({ paid: true, payment: { contributions: [{ userId: abhiId, amount: 120 }] } });
+    expect(sAfter.cards.support).toEqual([{ from: abhiId, to: sajinId, amount: 120 }]);
+    const aAfter = (await request(app).get(`/api/summary?month=${month}&scope=${abhiId}`).set(auth(tokenA))).body.cards;
+    expect(aAfter.personalExpenses - after.personalExpenses).toBeCloseTo(120, 2);
+  });
+
   it('pays next month’s commitment early: dated today, counted in next month', async () => {
     const next = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 1)).toISOString().slice(0, 7);
     const c = await request(app).post('/api/commitments').set(auth(tokenS)).send({

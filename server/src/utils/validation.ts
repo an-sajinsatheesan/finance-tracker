@@ -83,6 +83,12 @@ export const incomeUpdateSchema = incomeCreateSchema.omit({ month: true }).parti
 /** Days before the due day to remind; null = no reminder. */
 const reminderDays = z.coerce.number().int().min(0).max(15).nullable();
 
+/** How a common commitment is shared (50/50, agreed amounts, or by salary). */
+const commitmentSplit = z.object({
+  mode: z.enum(['equal', 'custom', 'income']),
+  shares: z.array(z.object({ userId: objectId, amount: z.coerce.number().min(0).max(1e9) })).max(10).optional(),
+});
+
 export const commitmentCreateSchema = z
   .object({
     title: text(80).min(1),
@@ -95,6 +101,7 @@ export const commitmentCreateSchema = z
     endMonth: month.optional().nullable(),
     dueDay: z.coerce.number().int().min(1).max(31).default(1),
     reminderDaysBefore: reminderDays.default(3),
+    split: commitmentSplit.optional(),
     notes: text(500).default(''),
   })
   .refine((v) => v.type === 'common' || !!v.ownerId, { message: 'Personal commitments need an owner', path: ['ownerId'] })
@@ -114,6 +121,7 @@ export const commitmentUpdateSchema = z.object({
   endMonth: month.optional().nullable(),
   dueDay: z.coerce.number().int().min(1).max(31).optional(),
   reminderDaysBefore: reminderDays.optional(),
+  split: commitmentSplit.optional(),
   notes: text(500).optional(),
 });
 

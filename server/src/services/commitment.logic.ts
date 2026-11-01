@@ -50,3 +50,36 @@ export function statusAt(c: CommitmentLike, refMonth: string): CommitmentStatus 
   if (c.startMonth > refMonth) return 'scheduled';
   return 'active';
 }
+
+export type SplitMode = 'equal' | 'custom' | 'income';
+export interface SplitLike { mode?: SplitMode | null; shares?: { userId: string; amount: number }[] | null }
+
+/**
+ * How a common commitment is shared, as one weight per member (in memberIds order).
+ * - equal: 50/50 (also the fallback when nothing usable is set).
+ * - custom: the planned amounts each person agreed to pay (e.g. 150 / 200 of 350);
+ *   if the total amount changes later they scale proportionally.
+ * - income: in proportion to each person's expected income that month.
+ */
+export function splitWeights(split: SplitLike | null | undefined, memberIds: string[], income: Record<string, number> = {}): number[] {
+  const weight = split?.mode === 'custom'
+    ? (id: string) => split.shares?.find((s) => String(s.userId) === id)?.amount ?? 0
+    : split?.mode === 'income' ? (id: string) => income[id] ?? 0 : null;
+  const w = weight ? memberIds.map((id) => Math.max(0, weight(id))) : [];
+  return w.some((x) => x > 0) ? w : memberIds.map(() => 1);
+}
+
+/**
+ * Splits an amount by weights in fils so the parts always add up. Leftover fils go to
+ * the largest remainders (ties: the first person, as with an equal split).
+ */
+export function splitByWeights(amount: number, weights: number[]): number[] {
+  const totalFils = Math.round(amount * 100);
+  const total = weights.reduce((a, b) => a + b, 0);
+  const exact = weights.map((w) => (totalFils * w) / total);
+  const fils = exact.map(Math.floor);
+  const rem = totalFils - fils.reduce((a, b) => a + b, 0);
+  const order = exact.map((x, i) => ({ i, r: x - Math.floor(x) })).sort((a, b) => b.r - a.r || a.i - b.i);
+  for (let k = 0; k < rem; k++) fils[order[k % order.length].i]++;
+  return fils.map((f) => f / 100);
+}

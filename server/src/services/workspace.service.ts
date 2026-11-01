@@ -22,6 +22,22 @@ export async function memberIds(workspaceId: string): Promise<string[]> {
   return ws.members.map((m) => String(m.userId));
 }
 
+/**
+ * Each member's expected income for a month (for "split by salary"): the month's
+ * income rows, or the recurring income sources when the month has none yet.
+ */
+export async function incomeByMember(workspaceId: string, month: string): Promise<Record<string, number>> {
+  const rows = await incomeRepository.listByMonths(workspaceId, [month]);
+  const out: Record<string, number> = {};
+  for (const r of rows) out[String(r.userId)] = (out[String(r.userId)] ?? 0) + (r.expectedAmount ?? 0);
+  if (Object.values(out).some((v) => v > 0)) return out;
+  const ws = await getWorkspace(workspaceId);
+  for (const m of ws.members) {
+    out[String(m.userId)] = (m.incomeSources ?? []).filter((s) => s.active !== false).reduce((a, s) => a + (s.amount ?? 0), 0);
+  }
+  return out;
+}
+
 /** Workspace-level authorization for referenced users (paidBy, ownerId, ...). */
 export async function assertMember(workspaceId: string, userId: string | null | undefined, field = 'user') {
   if (!userId) return;

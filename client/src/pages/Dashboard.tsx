@@ -7,21 +7,22 @@ import { ArrowRightLeft, CheckCircle2, ChevronDown, Coins, Plus, ReceiptText, Ta
 import { useAuth } from '../context/AuthContext';
 import { useMonth } from '../context/MonthContext';
 import { useApi } from '../lib/useApi';
-import type { Summary } from '../lib/types';
+import type { Cards, Summary } from '../lib/types';
 import { addMonths, compact, money, monthLabel, monthShort, thisMonth } from '../lib/format';
 import { C, CATEGORY_COLORS, OTHER_COLOR } from '../lib/chartColors';
 import { BlockSkeleton, Button, ErrorNote, Money, Page, PageHeader, Skeleton, StatSkeleton, Tabs, TypeBadge, cx, usePaging } from '../components/ui';
-import { PaidSoFar, PayCommitmentModal } from '../components/forms';
+import { PaidSoFar, PayCommitmentModal, payLabel } from '../components/forms';
 import { CategoryIcon } from '../components/CategoryIcon';
 
 type Member = Summary['cards']['members'][number];
 type Budget = Summary['budgetVsActual'][number];
 
 /**
- * Explains the settle-up line: each common expense is split 50/50, so whoever
- * paid more than their half is owed the difference by the other person.
+ * Explains the settle-up line: each common expense is split (50/50 unless its
+ * commitment sets another split), so whoever paid more than their part is owed the
+ * difference. Also lists support: partners paying each other's personal bills.
  */
-function Settlement({ members, name }: { members: Member[]; name: (id: string) => string }) {
+function Settlement({ members, support, name }: { members: Member[]; support: Cards['support']; name: (id: string) => string }) {
   const [open, setOpen] = useState(false);
   const owed = members.find((m) => m.balance > 0.004);
   const owes = members.find((m) => m.balance < -0.004);
@@ -32,24 +33,27 @@ function Settlement({ members, name }: { members: Member[]; name: (id: string) =
         <span className="flex-1">
           {owed && owes
             ? <><b>{name(owes.userId)}</b> owes <b>{name(owed.userId)}</b> AED <span className="num font-semibold">{money(owed.balance)}</span> for common expenses this month.</>
-            : 'Common expenses are settled — each of you paid exactly your half.'}
+            : 'Common expenses are settled — each of you paid exactly your part.'}
+          {support.map((x) => (
+            <span key={`${x.from}>${x.to}`} className="ml-1 text-emerald-700"> · <b>{name(x.from)}</b> supported <b>{name(x.to)}</b> AED <span className="num font-semibold">{money(x.amount)}</span></span>
+          ))}
         </span>
         <span className="flex items-center gap-0.5 font-medium text-brand-700">Why? <ChevronDown className={cx('size-3.5 transition-transform', open && 'rotate-180')} /></span>
       </button>
       {open && (
         <div className="space-y-2 border-t border-stone-100 px-4 py-3">
-          <p>Every common expense (and common commitment marked paid) is split 50/50. The settle-up compares what each person <i>paid</i> with their <i>half</i>:</p>
+          <p>Every common expense (and common commitment marked paid) is split 50/50, or by the split set on its commitment (custom amounts or by salary). The settle-up compares what each person <i>paid</i> with their <i>part</i>:</p>
           <div className="max-w-md overflow-hidden rounded-xl border border-stone-200">
             <DataTable value={members} dataKey="userId" size="small">
               <Column header="" body={(m: Member) => <span className="font-medium text-stone-800">{name(m.userId)}</span>} />
               <Column header="Paid" align="right" body={(m: Member) => <Money value={m.commonPaid} />} />
-              <Column header="Half share" align="right" body={(m: Member) => <Money value={m.commonShare} />} />
+              <Column header="Their part" align="right" body={(m: Member) => <Money value={m.commonShare} />} />
               <Column header="Difference" align="right" body={(m: Member) => <Money value={m.balance} signed />} />
             </DataTable>
           </div>
           {owed && owes && (
             <p>
-              {name(owed.userId)} paid <Money value={owed.balance} /> more than their half, so {name(owes.userId)} owes that amount.
+              {name(owed.userId)} paid <Money value={owed.balance} /> more than their part, so {name(owes.userId)} owes that amount.
               Usually this happens because one person paid a big shared bill (like rent). Check “Paid by” on the
               common expenses if it looks wrong — when you mark a commitment paid you can choose who paid it.
             </p>
@@ -274,7 +278,7 @@ export default function Dashboard() {
             <MiniStat label="Not yet allocated" value={c.notYetAllocated} sub="Cash left − goal allocations" />
           </div>
 
-          {isCouple && <Settlement members={c.members} name={memberName} />}
+          {isCouple && <Settlement members={c.members} support={c.support ?? []} name={memberName} />}
 
           <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
             <ChartCard title="Income vs spending · last 6 months">
@@ -352,7 +356,7 @@ export default function Dashboard() {
                         <div className={cx('truncate font-medium', d.paid && 'text-stone-500')}>{d.title}</div>
                         <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500">
                           {isCouple && <TypeBadge type={d.type} />} Due day {d.dueDay}
-                          {!d.paid && d.payment.paidAmount > 0 && <PaidSoFar payment={d.payment} />}
+                          {d.payment.paidAmount > 0 && (!d.paid || isCouple) && <PaidSoFar payment={d.payment} ownerId={d.type === 'personal' ? d.ownerId : null} />}
                         </div>
                       </div>
                       <div className="text-right">
@@ -361,7 +365,7 @@ export default function Dashboard() {
                       </div>
                       {!d.paid && (!future || early) && (
                         <Button size="sm" onClick={() => setPaying(d)} title="Record the payment as an expense">
-                          {d.payment.paidAmount > 0 ? 'Pay rest' : future ? 'Pay early' : 'Mark paid'}
+                          {payLabel(d, user!.id, isCouple, future)}
                         </Button>
                       )}
                     </li>

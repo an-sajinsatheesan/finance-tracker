@@ -32,6 +32,11 @@ export interface Income {
   accountId?: string | null;
 }
 
+/** How a common commitment is shared: 50/50, agreed amounts, or by expected income. */
+export type SplitMode = 'equal' | 'custom' | 'income';
+export interface Share { userId: string; amount: number }
+export interface CommitmentSplit { mode: SplitMode; shares?: Share[] }
+
 export interface CommitmentPayment { paidAmount: number; remaining: number; paid: boolean; contributions: { userId: string; amount: number }[] }
 export interface Commitment {
   id: string; title: string; category: Category; customCategory: string; type: Kind; ownerId: string | null;
@@ -39,6 +44,9 @@ export interface Commitment {
   dueDay: number; reminderDaysBefore: number | null; notes: string; status: 'active' | 'scheduled' | 'ended';
   /** Paid towards it in the month asked for (each partner can pay part of a common bill). */
   payment?: CommitmentPayment;
+  split: CommitmentSplit;
+  /** Each person's planned part this month (common only). */
+  shares?: Share[];
 }
 
 export interface Reminder {
@@ -64,6 +72,8 @@ export interface Cards {
   commonTotal: number; totalOutflow: number; cashLeft: number; allocatedToGoals: number; notYetAllocated: number;
   plannedCommitments: number; plannedBalance: number;
   members: { userId: string; commonPaid: number; commonShare: number; balance: number }[];
+  /** Partners paying each other's personal bills this month (not owed back). */
+  support: { from: string; to: string; amount: number }[];
 }
 export interface Summary {
   month: string; scope: string; cards: Cards;
@@ -72,6 +82,7 @@ export interface Summary {
   trend: { month: string; incomeReceived: number; outflow: number; planned: number }[];
   commitmentsDue: {
     id: string; title: string; type: Kind; ownerId: string | null; category: string; dueDay: number; amount: number; myShare: number; paid: boolean; payment: CommitmentPayment;
+    split: SplitMode; shares?: Share[];
   }[];
 }
 

@@ -18,6 +18,14 @@ const commitmentSchema = new Schema(
      * given month onwards, so earlier months keep their original planned value.
      */
     amountHistory: { type: [amountVersionSchema], required: true },
+    /**
+     * How a common commitment is shared: 'equal' (50/50), 'custom' (the agreed amount
+     * each person pays) or 'income' (by expected income). Missing means equal.
+     */
+    split: {
+      mode: { type: String, enum: ['equal', 'custom', 'income'] },
+      shares: { type: [new Schema({ userId: { type: Schema.Types.ObjectId, ref: 'User' }, amount: { type: Number, min: 0 } }, { _id: false })], default: undefined },
+    },
     startMonth: { type: String, required: true },
     endMonth: { type: String, default: null },
     dueDay: { type: Number, min: 1, max: 31, default: 1 },

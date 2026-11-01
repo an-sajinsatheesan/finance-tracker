@@ -3,8 +3,9 @@ import { round2 } from '../utils/money.js';
 import { currentMonth } from '../utils/month.js';
 import { expenseRepository } from '../repositories/expense.repository.js';
 import { commitmentRepository } from '../repositories/commitment.repository.js';
-import { assertMember, memberIds } from './workspace.service.js';
+import { assertMember, incomeByMember, memberIds } from './workspace.service.js';
 import { buildShares } from './expense.logic.js';
+import { splitWeights } from './commitment.logic.js';
 import { assertLookup } from './lookup.service.js';
 import { assertAccount } from './account.service.js';
 
@@ -16,6 +17,22 @@ type ExpenseInput = {
   month?: string;
   settlesCommitment?: boolean;
 };
+
+/**
+ * Share options for a commitment payment: a common bill follows the commitment's
+ * split; someone paying their partner's personal commitment supports them, so the
+ * cost is theirs (it is not owed back).
+ */
+async function shareOptions(
+  workspaceId: string, members: string[], c: { type?: string; split?: any } | null,
+  e: { type: string; month: string; paidBy: string; ownerId: string | null },
+) {
+  if (!c) return {};
+  if (e.type === 'personal') return { bearer: e.paidBy !== e.ownerId ? e.paidBy : null };
+  if (c.type !== 'common' || !c.split?.mode || c.split.mode === 'equal') return {};
+  const income = c.split.mode === 'income' ? await incomeByMember(workspaceId, e.month) : {};
+  return { weights: splitWeights(c.split, members, income) };
+}
 
 /** Expenses cannot be recorded in advance: a month opens for expenses on its 1st day. */
 export function assertMonthStarted(month: string) {
@@ -35,15 +52,15 @@ export async function createExpense(workspaceId: string, userId: string, input: 
   if (ownerId) await assertMember(workspaceId, ownerId, 'ownerId');
   await assertLookup(workspaceId, 'category', input.category, 'category');
   await assertAccount(workspaceId, input.accountId);
-  if (input.commitmentId) {
-    const c = await commitmentRepository.findById(workspaceId, input.commitmentId);
-    if (!c) throw badRequest('Unknown commitment');
-  }
+  const c = input.commitmentId ? await commitmentRepository.findById(workspaceId, input.commitmentId) : null;
+  if (input.commitmentId && !c) throw badRequest('Unknown commitment');
   const amount = round2(input.amount);
+  const month = input.month ?? input.date.slice(0, 7);
+  const opts = await shareOptions(workspaceId, members, c, { type: input.type, month, paidBy: input.paidBy, ownerId });
   return expenseRepository.create({
     workspaceId,
     date: input.date,
-    month: input.month ?? input.date.slice(0, 7),
+    month,
     description: input.description,
     category: input.category,
     customCategory: input.category === 'Custom' ? input.customCategory : '',
@@ -51,7 +68,7 @@ export async function createExpense(workspaceId: string, userId: string, input: 
     paidBy: input.paidBy,
     type: input.type,
     ownerId: ownerId ?? undefined,
-    shares: buildShares(input.type, amount, members, ownerId),
+    shares: buildShares(input.type, amount, members, ownerId, opts),
     commitmentId: input.commitmentId ?? undefined,
     settlesCommitment: input.commitmentId ? input.settlesCommitment : undefined,
     accountId: input.accountId || undefined,
@@ -86,7 +103,9 @@ export async function updateExpense(workspaceId: string, id: string, input: Part
     await assertMember(workspaceId, ownerId, 'ownerId');
   }
   doc.set('ownerId', ownerId ?? undefined);
-  doc.set('shares', buildShares(doc.type, doc.amount, members, ownerId));
+  const c = doc.commitmentId ? await commitmentRepository.findById(workspaceId, String(doc.commitmentId)) : null;
+  const opts = await shareOptions(workspaceId, members, c, { type: doc.type, month: doc.month, paidBy: String(doc.paidBy), ownerId });
+  doc.set('shares', buildShares(doc.type, doc.amount, members, ownerId, opts));
   await doc.save();
   return doc;
 }

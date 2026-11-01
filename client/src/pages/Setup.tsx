@@ -261,7 +261,7 @@ export default function Setup() {
           {step === 2 && (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-stone-500">Planned monthly payments (rent, EMIs, bills). They repeat every month automatically.{isCouple && ' Common ones are split 50/50.'} These are plans, not recorded expenses.</p>
+                <p className="text-xs text-stone-500">Planned monthly payments (rent, EMIs, bills). They repeat every month automatically.{isCouple && ' Common ones are split 50/50 unless you choose another split.'} These are plans, not recorded expenses.</p>
                 <Button size="sm" variant="primary" onClick={() => setEditing('new')} icon={<Plus className="size-3.5" />}>Add</Button>
               </div>
               <div className="overflow-hidden rounded-xl border border-stone-200">
