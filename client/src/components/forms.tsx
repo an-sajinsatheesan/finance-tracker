@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Plus } from 'lucide-react';
 import { api, errorText } from '../lib/api';
-import type { Account, Category, Commitment, Expense, Kind, LookupItem, LookupType } from '../lib/types';
+import type { Account, Category, Commitment, CommitmentPayment, Expense, Kind, LookupItem, LookupType } from '../lib/types';
 import { useApi } from '../lib/useApi';
 import { dateInMonth, money, monthLabel, thisMonth, todayStr } from '../lib/format';
 import { useAuth } from '../context/AuthContext';
@@ -334,11 +334,23 @@ export function ExpenseForm({ initial, month, onSaved, onCancel }:
  * Records a commitment's payment for a month as an expense. Who paid matters
  * for common bills: it decides who owes whom in the settle-up.
  */
+/** "Sajin 200 · 200 left": who has paid part of a commitment this month. */
+export function PaidSoFar({ payment }: { payment: CommitmentPayment }) {
+  const { memberName } = useAuth();
+  return (
+    <span className="text-[11px] text-stone-500">
+      {payment.contributions.map((p) => `${memberName(p.userId)} ${money(p.amount)}`).join(' · ')}
+      {payment.remaining > 0 && <span className="text-amber-700"> · {money(payment.remaining)} left</span>}
+    </span>
+  );
+}
+
 export function PayCommitmentModal({ target, month, onClose, onPaid }: {
-  target: { id: string; title: string; type: Kind; ownerId?: string | null; amount: number; dueDay?: number } | null;
+  target: { id: string; title: string; type: Kind; ownerId?: string | null; amount: number; dueDay?: number; payment?: CommitmentPayment } | null;
   month: string; onClose: () => void; onPaid: () => void;
 }) {
-  const { user, isCouple } = useAuth();
+  const { user, isCouple, workspace } = useAuth();
+  const [settles, setSettles] = useState(false);
   const toast = useToast();
   const accounts = useApi<Account[]>(target ? '/accounts' : null);
   const [paidBy, setPaidBy] = useState('');
@@ -353,14 +365,22 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
   // Reset the fields whenever a different commitment is opened.
   if (target && target.id !== lastId) {
     setLastId(target.id);
-    setPaidBy(target.type === 'personal' && target.ownerId ? target.ownerId : user?.id ?? '');
-    setAmount(target.amount);
+    // Common bill where you already paid your part: the rest is usually your partner's.
+    const paidAlready = target.payment?.contributions.map((p) => p.userId) ?? [];
+    const me = user?.id ?? '';
+    setPaidBy(target.type === 'personal' && target.ownerId ? target.ownerId
+      : paidAlready.includes(me) ? workspace?.members.find((m) => !paidAlready.includes(m.userId))?.userId ?? me
+      : me);
+    setAmount(target.payment?.paidAmount ? target.payment.remaining : target.amount);
+    setSettles(false);
     setAccountId('');
     const due = dateInMonth(month, target.dueDay ?? 1);
     setDate(early || todayStr().startsWith(month) ? todayStr() : due <= maxDate ? due : maxDate);
     setError(null);
   }
   const close = () => { setLastId(null); onClose(); };
+  const remaining = target ? (target.payment?.paidAmount ? target.payment.remaining : target.amount) : 0;
+  const short = !!amount && amount < remaining - 0.005; // part of the bill: the rest can be paid later (e.g. by the partner)
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -369,8 +389,9 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
     setBusy(true);
     setError(null);
     try {
-      await api.post(`/commitments/${target.id}/pay`, { month, paidBy, amount, date, accountId: accountId || null });
-      toast.success(`${target.title} marked paid for ${monthLabel(month)}`);
+      const final = short ? settles : true;
+      await api.post(`/commitments/${target.id}/pay`, { month, paidBy, amount, date, accountId: accountId || null, settles: final });
+      toast.success(final ? `${target.title} paid for ${monthLabel(month)}` : `${money(amount)} paid towards ${target.title} · ${money(remaining - amount)} left`);
       setLastId(null);
       onPaid();
     } catch (err) {
@@ -388,6 +409,18 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
           <Field label="Date paid"><DateInput value={date} min={early ? todayStr() : `${month}-01`} max={maxDate} onChange={setDate} required /></Field>
         </div>
         {early && <p className="rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-900">Paying early: dated today, but counted in {monthLabel(month)}’s budget and shown as paid for {monthLabel(month)}.</p>}
+        {!!target?.payment?.paidAmount && (
+          <p className="rounded-xl border border-stone-200 px-3 py-2 text-xs text-stone-600">Already paid: <PaidSoFar payment={target.payment} /></p>
+        )}
+        {short && (
+          <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-stone-200 px-3 py-2 text-xs text-stone-600">
+            <input type="checkbox" className="mt-0.5 accent-brand-600" checked={settles} onChange={(e) => setSettles(e.target.checked)} />
+            <span>
+              <b className="text-stone-800">Fully paid for {monthLabel(month)}</b> — the bill was smaller this month.
+              {' '}Leave unticked if the rest ({money(remaining - (amount ?? 0))}) is still to be paid{isCouple && target?.type === 'common' ? ', e.g. by your partner' : ''}.
+            </span>
+          </label>
+        )}
         {isCouple && (
           <Field label="Paid by" hint={target?.type === 'common' ? 'For common bills this decides who owes whom: the other person owes the payer half.' : undefined}>
             <MemberSelect value={paidBy} onChange={setPaidBy} />

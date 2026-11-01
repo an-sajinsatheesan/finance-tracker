@@ -12,13 +12,14 @@
 import { round2, splitEqually, sum } from '../utils/money.js';
 import { categoryLabel } from '../utils/categories.js';
 import { daysInMonth } from '../utils/month.js';
-import { amountFor, isActiveIn, type CommitmentLike } from './commitment.logic.js';
+import { amountFor, isActiveIn, paymentStatus, type CommitmentLike } from './commitment.logic.js';
 
 export interface IncomeRow { userId: string; month: string; expectedAmount: number; receivedAmount: number; status: string }
 export interface ExpenseRow {
   id: string; month: string; date: string; amount: number; type: 'personal' | 'common'; category: string;
   customCategory?: string; paidBy: string; ownerId?: string | null; shares: { userId: string; amount: number }[];
   commitmentId?: string | null;
+  settlesCommitment?: boolean | null;
 }
 export interface CommitmentRow extends CommitmentLike {
   id: string; title: string; type: 'personal' | 'common'; ownerId?: string | null; category: string; customCategory?: string; dueDay?: number;
@@ -143,10 +144,11 @@ export function computeCommitmentsDue(d: Dataset, month: string, scope: Scope) {
   return d.commitments
     .filter((c) => isActiveIn(c, month) && (scope === 'common' ? c.type === 'common' : c.type === 'common' || c.ownerId === scope))
     .map((c) => {
-      const paid = d.expenses.find((e) => e.month === month && e.commitmentId === c.id);
+      const amount = amountFor(c, month);
+      const payment = paymentStatus(amount, d.expenses.filter((e) => e.month === month && e.commitmentId === c.id));
       return {
-        id: c.id, title: c.title, type: c.type, category: categoryLabel(c.category, c.customCategory), dueDay: c.dueDay ?? 1,
-        amount: amountFor(c, month), myShare: plannedFor(c, month, scope, d.memberIds), paid: !!paid,
+        id: c.id, title: c.title, type: c.type, ownerId: c.ownerId ?? null, category: categoryLabel(c.category, c.customCategory), dueDay: c.dueDay ?? 1,
+        amount, myShare: plannedFor(c, month, scope, d.memberIds), paid: payment.paid, payment,
       };
     })
     .sort((a, b) => Number(a.paid) - Number(b.paid) || a.dueDay - b.dueDay);

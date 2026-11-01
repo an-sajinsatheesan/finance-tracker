@@ -5,7 +5,7 @@ import { commitmentRepository } from '../repositories/commitment.repository.js';
 import { expenseRepository } from '../repositories/expense.repository.js';
 import { assertMember } from './workspace.service.js';
 import { assertLookup } from './lookup.service.js';
-import { amountFor, statusAt, type CommitmentStatus } from './commitment.logic.js';
+import { amountFor, paymentStatus, statusAt, type CommitmentStatus, type PaymentLike } from './commitment.logic.js';
 import { assertMonthStarted, createExpense } from './expense.service.js';
 
 type CreateInput = {
@@ -22,7 +22,10 @@ export function normalizeHistory(history: { fromMonth: string; amount: number }[
   return [{ fromMonth: startMonth, amount: base.amount }, ...sorted.filter((v) => v.fromMonth > startMonth)];
 }
 
-export function serializeCommitment(c: any, refMonth = currentMonth()) {
+const toPayment = (e: { amount: number; paidBy: unknown; settlesCommitment?: boolean | null }): PaymentLike =>
+  ({ amount: e.amount, paidBy: String(e.paidBy), settlesCommitment: e.settlesCommitment });
+
+export function serializeCommitment(c: any, refMonth = currentMonth(), payments?: PaymentLike[]) {
   return {
     id: String(c._id),
     title: c.title,
@@ -39,12 +42,17 @@ export function serializeCommitment(c: any, refMonth = currentMonth()) {
     reminderDaysBefore: c.reminderDaysBefore === undefined ? 3 : c.reminderDaysBefore,
     notes: c.notes,
     status: statusAt(c, refMonth) as CommitmentStatus,
+    ...(payments && { payment: paymentStatus(amountFor(c, refMonth), payments) }),
   };
 }
 
+/** Commitments as of a month, each with what has been paid towards it in that month. */
 export async function listCommitments(workspaceId: string, refMonth = currentMonth()) {
-  const list = await commitmentRepository.list(workspaceId);
-  return list.map((c) => serializeCommitment(c, refMonth));
+  const [list, expenses] = await Promise.all([
+    commitmentRepository.list(workspaceId),
+    expenseRepository.listActiveByMonth(workspaceId, refMonth),
+  ]);
+  return list.map((c) => serializeCommitment(c, refMonth, expenses.filter((e) => String(e.commitmentId) === String(c._id)).map(toPayment)));
 }
 
 export async function createCommitment(workspaceId: string, userId: string, input: CreateInput) {
@@ -144,15 +152,20 @@ export async function payCommitment(
   workspaceId: string,
   userId: string,
   id: string,
-  input: { month: string; date?: string; paidBy?: string; amount?: number; accountId?: string | null },
+  input: { month: string; date?: string; paidBy?: string; amount?: number; accountId?: string | null; settles?: boolean },
 ) {
   // Next month's bills can be paid early (e.g. rent on the 31st): dated today, counted in their own month.
   const early = input.month === addMonths(currentMonth(), 1);
   if (!early) assertMonthStarted(input.month);
   const c = await commitmentRepository.findById(workspaceId, id);
   if (!c) throw notFound('Commitment');
-  const existing = await expenseRepository.findForCommitment(workspaceId, id, input.month);
-  if (existing) throw badRequest('This commitment is already recorded as paid for that month');
+  const planned = amountFor(c, input.month);
+  const before = paymentStatus(planned, (await expenseRepository.listForCommitment(workspaceId, id, input.month)).map(toPayment));
+  if (before.paid) throw badRequest('This commitment is already recorded as paid for that month');
+  const amount = round2(input.amount ?? before.remaining);
+  if (amount <= 0) throw badRequest('Enter the amount');
+  // Final unless it leaves part of the bill for the other person (or a later payment).
+  const settles = input.settles ?? before.paidAmount + amount >= planned - 0.005;
   const dateStr = early
     ? today()
     : input.date && input.date.startsWith(input.month)
@@ -164,7 +177,7 @@ export async function payCommitment(
     description: c.title,
     category: c.category,
     customCategory: c.customCategory,
-    amount: input.amount ?? amountFor(c, input.month),
+    amount,
     paidBy,
     type: c.type,
     ownerId: c.type === 'personal' ? String(c.ownerId) : null,
@@ -172,5 +185,6 @@ export async function payCommitment(
     commitmentId: id,
     accountId: input.accountId,
     month: input.month,
+    settlesCommitment: settles,
   });
 }

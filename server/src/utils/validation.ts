@@ -124,6 +124,8 @@ export const commitmentPaySchema = z.object({
   paidBy: objectId.optional(),
   amount: positiveMoney.optional(),
   accountId: objectId.optional().nullable(),
+  /** true: this payment completes the month even if smaller; false: part of it (the rest comes later). */
+  settles: z.boolean().optional(),
 });
 
 export const expenseCreateSchema = z

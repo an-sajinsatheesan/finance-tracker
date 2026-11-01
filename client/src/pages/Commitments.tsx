@@ -6,12 +6,12 @@ import { useAuth } from '../context/AuthContext';
 import { useMonth } from '../context/MonthContext';
 import { useApi } from '../lib/useApi';
 import { api, errorText } from '../lib/api';
-import type { Commitment, Expense } from '../lib/types';
+import type { Commitment } from '../lib/types';
 import { addMonths, categoryLabel, money, monthLabel, thisMonth } from '../lib/format';
 import {
   Button, Empty, ErrorNote, Field, IconButton, Modal, Money, MonthInput, Page, PageHeader, TableCard, TableSkeleton, Tabs, TypeBadge, confirmAction, usePaging, useToast,
 } from '../components/ui';
-import { CommitmentForm, PayCommitmentModal } from '../components/forms';
+import { CommitmentForm, PaidSoFar, PayCommitmentModal } from '../components/forms';
 import { CategoryIcon } from '../components/CategoryIcon';
 
 type Tab = 'active' | 'scheduled' | 'ended';
@@ -24,18 +24,20 @@ export default function Commitments() {
   // Next month's commitments can be paid early; months after that haven't started.
   const early = month === addMonths(thisMonth(), 1);
   const future = month > thisMonth() && !early;
-  const expenses = useApi<Expense[]>(future ? null : `/expenses?month=${month}`);
   const [tab, setTab] = useState<Tab>('active');
+  const [who, setWho] = useState<string>('all'); // 'all' | 'common' | a member id (their personal commitments)
   const [editing, setEditing] = useState<Commitment | 'new' | null>(null);
   const [ending, setEnding] = useState<Commitment | null>(null);
   const [paying, setPaying] = useState<Commitment | null>(null);
   const [endMonth, setEndMonth] = useState(thisMonth());
   const [busy, setBusy] = useState(false);
-  const paging = usePaging([tab, month]);
+  const paging = usePaging([tab, month, who]);
 
   const all = list.data ?? [];
-  const rows = all.filter((c) => c.status === tab);
-  const paidIds = useMemo(() => new Set((future ? [] : expenses.data ?? []).map((e) => e.commitmentId).filter(Boolean)), [expenses.data, future]);
+  const forWho = (c: Commitment) => who === 'all' || (who === 'common' ? c.type === 'common' : c.type === 'personal' && c.ownerId === who);
+  // Unpaid first; paid ones move to the end, each group by due day.
+  const rows = useMemo(() => all.filter((c) => c.status === tab && forWho(c))
+    .sort((a, b) => Number(!!a.payment?.paid) - Number(!!b.payment?.paid) || a.dueDay - b.dueDay), [all, tab, who]); // eslint-disable-line react-hooks/exhaustive-deps
   const inMonth = (c: Commitment) => c.startMonth <= month && (!c.endMonth || c.endMonth >= month);
   const amountIn = (c: Commitment) => {
     const v = [...c.amountHistory].sort((a, b) => a.fromMonth.localeCompare(b.fromMonth));
@@ -45,7 +47,7 @@ export default function Commitments() {
   };
   const n = workspace?.members.length ?? 2;
   const plannedTotal = all.filter(inMonth).reduce((a, c) => a + amountIn(c), 0);
-  const reloadAll = () => { list.reload(); expenses.reload(); };
+  const reloadAll = () => list.reload();
 
   async function run(fn: () => Promise<unknown>, okText: string) {
     setBusy(true);
@@ -68,8 +70,15 @@ export default function Commitments() {
         subtitle={`Planned monthly payments — they repeat every month until their end month · ${monthLabel(month)} total ${money(plannedTotal)} AED`}
         actions={<Button variant="primary" onClick={() => setEditing('new')} icon={<Plus className="size-3.5" />}>New commitment</Button>}
       />
-      <div className="mb-3">
-        <Tabs<Tab> value={tab} onChange={setTab} items={(['active', 'scheduled', 'ended'] as Tab[]).map((t) => ({ value: t, label: t[0].toUpperCase() + t.slice(1), count: all.filter((c) => c.status === t).length }))} />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Tabs<Tab> value={tab} onChange={setTab} items={(['active', 'scheduled', 'ended'] as Tab[]).map((t) => ({ value: t, label: t[0].toUpperCase() + t.slice(1), count: all.filter((c) => c.status === t && forWho(c)).length }))} />
+        {isCouple && (
+          <Tabs<string> value={who} onChange={setWho} items={[
+            { value: 'all', label: 'All' },
+            { value: 'common', label: 'Common' },
+            ...(workspace?.members ?? []).map((m) => ({ value: m.userId, label: m.displayName })),
+          ]} />
+        )}
       </div>
       <ErrorNote message={list.error} />
       <TableCard>
@@ -111,9 +120,21 @@ export default function Commitments() {
           )} />
           <Column header={monthLabel(month, 'short')} body={(c: Commitment) => (
             !inMonth(c) ? <span className="text-xs text-stone-400">n/a</span>
-              : paidIds.has(c.id) ? <span className="inline-flex items-center gap-1 text-xs text-brand-700"><CheckCircle2 className="size-3.5" /> Paid</span>
+              : c.payment?.paid ? (
+                <div className="text-xs">
+                  <span className="inline-flex items-center gap-1 text-brand-700"><CheckCircle2 className="size-3.5" /> Paid</span>
+                  {c.payment.paidAmount !== amountIn(c) && <span className="num ml-1 text-stone-500">{money(c.payment.paidAmount)}</span>}
+                </div>
+              )
               : future ? <span className="text-xs text-stone-400">Not started</span>
-              : <Button size="sm" onClick={() => setPaying({ ...c, amount: amountIn(c) })} title={early ? `Pay ${monthLabel(month)}’s bill today` : undefined}>{early ? 'Pay early' : 'Mark paid'}</Button>
+              : (
+                <div className="flex items-center gap-2">
+                  <Button size="sm" onClick={() => setPaying({ ...c, amount: amountIn(c) })} title={early ? `Pay ${monthLabel(month)}’s bill today` : undefined}>
+                    {c.payment?.paidAmount ? 'Pay rest' : early ? 'Pay early' : 'Mark paid'}
+                  </Button>
+                  {!!c.payment?.paidAmount && <PaidSoFar payment={c.payment} />}
+                </div>
+              )
           )} />
           <Column align="right" style={{ width: '7rem' }} body={(c: Commitment) => (
             <div className="whitespace-nowrap">

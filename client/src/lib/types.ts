@@ -32,10 +32,13 @@ export interface Income {
   accountId?: string | null;
 }
 
+export interface CommitmentPayment { paidAmount: number; remaining: number; paid: boolean; contributions: { userId: string; amount: number }[] }
 export interface Commitment {
   id: string; title: string; category: Category; customCategory: string; type: Kind; ownerId: string | null;
   amount: number; amountHistory: { fromMonth: string; amount: number }[]; startMonth: string; endMonth: string | null;
   dueDay: number; reminderDaysBefore: number | null; notes: string; status: 'active' | 'scheduled' | 'ended';
+  /** Paid towards it in the month asked for (each partner can pay part of a common bill). */
+  payment?: CommitmentPayment;
 }
 
 export interface Reminder {
@@ -67,7 +70,9 @@ export interface Summary {
   budgetVsActual: { category: string; planned: number; actual: number }[];
   daily: { day: number; personal: number; common: number }[];
   trend: { month: string; incomeReceived: number; outflow: number; planned: number }[];
-  commitmentsDue: { id: string; title: string; type: Kind; category: string; dueDay: number; amount: number; myShare: number; paid: boolean }[];
+  commitmentsDue: {
+    id: string; title: string; type: Kind; ownerId: string | null; category: string; dueDay: number; amount: number; myShare: number; paid: boolean; payment: CommitmentPayment;
+  }[];
 }
 
 export type AccountGroup = 'cash' | 'deposit' | 'investment' | 'liability';

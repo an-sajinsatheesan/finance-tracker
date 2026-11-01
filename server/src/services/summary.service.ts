@@ -30,6 +30,7 @@ export async function getSummary(workspaceId: string, month: string, scope: stri
       customCategory: e.customCategory, paidBy: String(e.paidBy), ownerId: e.ownerId ? String(e.ownerId) : null,
       shares: e.shares.map((s) => ({ userId: String(s.userId), amount: s.amount })),
       commitmentId: e.commitmentId ? String(e.commitmentId) : null,
+      settlesCommitment: e.settlesCommitment,
     })),
     commitments: commitments.map((c) => ({
       id: String(c._id), title: c.title, type: c.type, ownerId: c.ownerId ? String(c.ownerId) : null,

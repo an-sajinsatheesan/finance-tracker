@@ -20,6 +20,11 @@ const expenseSchema = new Schema(
     /** Who bears the cost. Personal: one share. Common: split equally. Sum === amount. */
     shares: { type: [shareSchema], required: true },
     commitmentId: { type: Schema.Types.ObjectId, ref: 'Commitment' },
+    /**
+     * Commitment payments: false = one part of it (e.g. each partner pays their half),
+     * true = it is fully paid for the month. Unset on older payments, which each paid it in full.
+     */
+    settlesCommitment: { type: Boolean },
     /** Account the money left (optional); a credit card raises its outstanding balance. */
     accountId: { type: Schema.Types.ObjectId, ref: 'Account' },
     notes: { type: String, default: '' },

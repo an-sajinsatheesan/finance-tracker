@@ -8,6 +8,25 @@ export interface CommitmentLike {
 
 export type CommitmentStatus = 'active' | 'scheduled' | 'ended';
 
+export interface PaymentLike { amount: number; paidBy: string; settlesCommitment?: boolean | null }
+
+/**
+ * What has been paid towards a commitment in a month. Several payments can add up
+ * (each partner paying part of a common bill); it is paid once they reach the planned
+ * amount or one of them was marked as the final payment (e.g. a smaller bill).
+ */
+export function paymentStatus(planned: number, payments: PaymentLike[]) {
+  const paidAmount = Math.round(payments.reduce((a, p) => a + p.amount, 0) * 100) / 100;
+  const byPerson = new Map<string, number>();
+  for (const p of payments) byPerson.set(p.paidBy, Math.round(((byPerson.get(p.paidBy) ?? 0) + p.amount) * 100) / 100);
+  return {
+    paidAmount,
+    remaining: Math.max(0, Math.round((planned - paidAmount) * 100) / 100),
+    paid: payments.length > 0 && (paidAmount >= planned - 0.005 || payments.some((p) => p.settlesCommitment !== false)),
+    contributions: [...byPerson].map(([userId, amount]) => ({ userId, amount })),
+  };
+}
+
 /** Planned amount for a given month (latest version whose fromMonth <= month). */
 export function amountFor(c: CommitmentLike, month: string): number {
   const versions = [...c.amountHistory].sort((a, b) => a.fromMonth.localeCompare(b.fromMonth));

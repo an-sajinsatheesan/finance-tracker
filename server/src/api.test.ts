@@ -314,12 +314,27 @@ d('API', () => {
     expect(s.body.cards.incomePending).toBe(0); // 1000 of 1200 marked received: nothing left pending
   });
 
+  it('lets each partner pay part of a common commitment until it is fully paid', async () => {
+    const c = await request(app).post('/api/commitments').set(auth(tokenS)).send({
+      title: 'Shared internet', category: 'Internet', amount: 400, type: 'common', startMonth: month, dueDay: 1,
+    }).expect(201);
+    await request(app).post(`/api/commitments/${c.body.id}/pay`).set(auth(tokenS)).send({ month, amount: 200, paidBy: sajinId }).expect(201);
+    const mid = (await request(app).get(`/api/commitments?month=${month}`).set(auth(tokenS))).body.find((x: any) => x.id === c.body.id);
+    expect(mid.payment).toMatchObject({ paid: false, paidAmount: 200, remaining: 200 });
+    const due = (await request(app).get(`/api/summary?month=${month}&scope=common`).set(auth(tokenA))).body.commitmentsDue.find((x: any) => x.id === c.body.id);
+    expect(due).toMatchObject({ paid: false, payment: { remaining: 200 } }); // dashboard agrees
+    await request(app).post(`/api/commitments/${c.body.id}/pay`).set(auth(tokenA)).send({ month, paidBy: abhiId }).expect(201); // the rest
+    const done = (await request(app).get(`/api/commitments?month=${month}`).set(auth(tokenS))).body.find((x: any) => x.id === c.body.id);
+    expect(done.payment).toMatchObject({ paid: true, paidAmount: 400, contributions: [{ userId: sajinId, amount: 200 }, { userId: abhiId, amount: 200 }] });
+    await request(app).post(`/api/commitments/${c.body.id}/pay`).set(auth(tokenS)).send({ month }).expect(400);
+  });
+
   it('pays next month’s commitment early: dated today, counted in next month', async () => {
     const next = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 1)).toISOString().slice(0, 7);
     const c = await request(app).post('/api/commitments').set(auth(tokenS)).send({
       title: 'Next rent', category: 'Rent', amount: 400, type: 'personal', ownerId: sajinId, startMonth: month, dueDay: 1,
     }).expect(201);
-    const paid = await request(app).post(`/api/commitments/${c.body.id}/pay`).set(auth(tokenS)).send({ month: next, amount: 300 }).expect(201);
+    const paid = await request(app).post(`/api/commitments/${c.body.id}/pay`).set(auth(tokenS)).send({ month: next, amount: 300, settles: true }).expect(201); // smaller bill, fully paid
     expect(paid.body).toMatchObject({ month: next, amount: 300 });
     expect(paid.body.date.slice(0, 7)).toBe(month);
     const nextExp = await request(app).get(`/api/expenses?month=${next}`).set(auth(tokenS)).expect(200);

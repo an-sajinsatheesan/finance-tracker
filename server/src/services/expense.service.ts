@@ -14,6 +14,7 @@ type ExpenseInput = {
   accountId?: string | null;
   /** Budget month when it differs from the date's month (next month's commitment paid early). */
   month?: string;
+  settlesCommitment?: boolean;
 };
 
 /** Expenses cannot be recorded in advance: a month opens for expenses on its 1st day. */
@@ -52,6 +53,7 @@ export async function createExpense(workspaceId: string, userId: string, input: 
     ownerId: ownerId ?? undefined,
     shares: buildShares(input.type, amount, members, ownerId),
     commitmentId: input.commitmentId ?? undefined,
+    settlesCommitment: input.commitmentId ? input.settlesCommitment : undefined,
     accountId: input.accountId || undefined,
     notes: input.notes ?? '',
     createdBy: userId,

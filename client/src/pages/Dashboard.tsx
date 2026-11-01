@@ -8,10 +8,10 @@ import { useAuth } from '../context/AuthContext';
 import { useMonth } from '../context/MonthContext';
 import { useApi } from '../lib/useApi';
 import type { Summary } from '../lib/types';
-import { compact, money, monthLabel, monthShort, thisMonth } from '../lib/format';
+import { addMonths, compact, money, monthLabel, monthShort, thisMonth } from '../lib/format';
 import { C, CATEGORY_COLORS, OTHER_COLOR } from '../lib/chartColors';
 import { BlockSkeleton, Button, ErrorNote, Money, Page, PageHeader, Skeleton, StatSkeleton, Tabs, TypeBadge, cx, usePaging } from '../components/ui';
-import { PayCommitmentModal } from '../components/forms';
+import { PaidSoFar, PayCommitmentModal } from '../components/forms';
 import { CategoryIcon } from '../components/CategoryIcon';
 
 type Member = Summary['cards']['members'][number];
@@ -217,6 +217,7 @@ export default function Dashboard() {
   const isCommon = scope === 'common';
   const c = data?.cards;
   const future = month > thisMonth();
+  const early = month === addMonths(thisMonth(), 1); // next month's bills can be paid early
   const trend = data?.trend ?? [];
   const at = trend.findIndex((t) => t.month === month);
   const prev = at > 0 ? trend[at - 1] : undefined;
@@ -349,14 +350,19 @@ export default function Dashboard() {
                         : <CategoryIcon category={d.category} className="size-9! rounded-full!" />}
                       <div className="min-w-0 flex-1">
                         <div className={cx('truncate font-medium', d.paid && 'text-stone-500')}>{d.title}</div>
-                        <div className="flex items-center gap-1.5 text-[11px] text-stone-500">{isCouple && <TypeBadge type={d.type} />} Due day {d.dueDay}</div>
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500">
+                          {isCouple && <TypeBadge type={d.type} />} Due day {d.dueDay}
+                          {!d.paid && d.payment.paidAmount > 0 && <PaidSoFar payment={d.payment} />}
+                        </div>
                       </div>
                       <div className="text-right">
                         <Money value={d.myShare} className="font-semibold" />
                         {d.type === 'common' && !isCommon && <div className="num text-[11px] text-stone-400">of {money(d.amount)}</div>}
                       </div>
-                      {!d.paid && !future && (
-                        <Button size="sm" onClick={() => setPaying(d)} title="Record the payment as an expense">Mark paid</Button>
+                      {!d.paid && (!future || early) && (
+                        <Button size="sm" onClick={() => setPaying(d)} title="Record the payment as an expense">
+                          {d.payment.paidAmount > 0 ? 'Pay rest' : future ? 'Pay early' : 'Mark paid'}
+                        </Button>
                       )}
                     </li>
                   ))}
