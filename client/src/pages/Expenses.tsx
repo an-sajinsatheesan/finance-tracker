@@ -128,7 +128,7 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
                 {isCouple && (
                   <span className="text-stone-600" title="Your own expenses in full, plus your share of common ones">
                     {whoLabel} <Money value={whoTotal} className="font-semibold text-brand-700" /> AED
-                    <span className="text-stone-400"> · paid <Money value={active.filter((e) => e.paidBy === who).reduce((a, e) => a + e.amount, 0)} /></span>
+                    <span className="text-stone-400"> · paid <Money value={active.reduce((a, e) => a + (fromCommon(e) ? costOf(e) : e.paidBy === who ? e.amount : 0), 0)} /></span>
                   </span>
                 )}
                 <span className="font-semibold">Total <Money value={total} /> AED</span>
