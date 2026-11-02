@@ -181,7 +181,7 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
                 </span>
                 {fromAccount(e)}
                 {sent.map((x) => (
-                  <span key={x.id} className="text-sky-700">↗ {memberName(x.fromUserId)} sent <Money value={x.amount} /> to {x.toUserId ? memberName(x.toUserId) : 'joint account'}</span>
+                  <span key={x.id} className="text-sky-700">↗ {memberName(x.fromUserId)} sent <Money value={x.amount} /> to {x.toUserId ? memberName(x.toUserId) : 'common account'}</span>
                 ))}
                 {unpaidShares(e).map((s) => (
                   <span key={s.userId} className="inline-flex items-center gap-1 text-rose-600">

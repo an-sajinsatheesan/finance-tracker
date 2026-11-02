@@ -70,7 +70,7 @@ export default function BalancesPage() {
   const series = [
     { key: 'household', name: isCouple ? 'Household' : 'Total', color: C.income },
     ...(isCouple ? members.map((m, i) => ({ key: m.userId, name: m.displayName, color: CATEGORY_COLORS[[1, 3][i] ?? 4] })) : []),
-    ...(isCouple ? [{ key: 'joint', name: 'Joint', color: CATEGORY_COLORS[2] }] : []),
+    ...(isCouple ? [{ key: 'joint', name: 'Common', color: CATEGORY_COLORS[2] }] : []),
   ];
   const trend = (own?.trend ?? []).map((t) => ({ label: monthShort(t.month), month: t.month, household: t.household, joint: t.joint, ...t.members }));
 
@@ -157,7 +157,7 @@ export default function BalancesPage() {
             ))}
             {isCouple && (
               <Tile
-                tint={3} icon={<Users className="size-4" />} label="Joint accounts" value={totals.joint} currency={cur}
+                tint={3} icon={<Users className="size-4" />} label="Common accounts" value={totals.joint} currency={cur}
                 sub={prevTotals && <>Last month <span className="num">{moneyIn(prevTotals.joint, cur)}</span></>}
               />
             )}
@@ -187,7 +187,7 @@ export default function BalancesPage() {
                   </div>
                 </div>
               )} />
-              {isCouple && <Column header="Owner" body={(a: BalanceAccount) => a.type === 'common' ? <Badge tone="violet">Joint</Badge> : <span className="text-xs text-stone-600">{memberName(a.ownerId)}</span>} />}
+              {isCouple && <Column header="Owner" body={(a: BalanceAccount) => a.type === 'common' ? <Badge tone="violet">Common</Badge> : <span className="text-xs text-stone-600">{memberName(a.ownerId)}</span>} />}
               <Column header="Start of month" align="right" body={(a: BalanceAccount) => <span className="num text-stone-500">{moneyIn(a.opening, a.currency)}</span>} />
               <Column header="Money in" align="right" body={(a: BalanceAccount) => a.moneyIn ? <span className="num text-emerald-700">+{moneyIn(a.moneyIn, a.currency)}</span> : <span className="text-stone-300">—</span>} />
               <Column header="Money out" align="right" body={(a: BalanceAccount) => a.moneyOut ? <span className="num text-rose-700">−{moneyIn(a.moneyOut, a.currency)}</span> : <span className="text-stone-300">—</span>} />

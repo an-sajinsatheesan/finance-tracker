@@ -127,7 +127,7 @@ export default function WealthPage() {
     return [
       { value: 'all', label: 'Household' },
       ...ms.map((m) => ({ value: m.userId, label: m.userId === user!.id ? `${m.displayName} (me)` : m.displayName })),
-      { value: 'common', label: 'Joint' },
+      { value: 'common', label: 'Common' },
     ];
   }, [workspace, user]);
 

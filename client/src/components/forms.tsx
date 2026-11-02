@@ -47,7 +47,7 @@ export function AccountSelect({ accounts, value, onChange, ownerId, purpose, ari
     .filter((a) => !a.archived && a.currency === (workspace?.currency ?? 'AED'))
     .filter((a) => (purpose === 'out' ? a.group === 'cash' || a.group === 'liability' : a.group === 'cash' || a.group === 'deposit'))
     .filter((a) => a.type === 'common' || !ownerId || a.ownerId === ownerId)
-    .map((a) => ({ label: `${a.name} · ${label('bank', a.bank)}${a.type === 'common' ? ' (joint)' : ''}`, value: a.id }));
+    .map((a) => ({ label: `${a.name} · ${label('bank', a.bank)}${a.type === 'common' ? ' (common)' : ''}`, value: a.id }));
   if (value && !opts.some((o) => o.value === value)) opts.unshift({ label: all.find((a) => a.id === value)?.name ?? 'Other account', value });
   return <Select value={value} onChange={onChange} options={opts} placeholder={opts.length ? 'Not linked' : 'No accounts yet'} showClear ariaLabel={ariaLabel} />;
 }
@@ -464,7 +464,7 @@ export function WhoPaid({ c, onUndo, compact }: { c: PayTarget; onUndo?: (shareI
   for (const x of p?.sent ?? []) {
     items.push(
       <span key={`s${x.id}`} className="inline-flex items-center gap-1 text-sky-700">
-        ↗ {memberName(x.fromUserId)} sent <span className="num">{money(x.amount)}</span> to {x.toUserId ? memberName(x.toUserId) : 'joint account'}
+        ↗ {memberName(x.fromUserId)} sent <span className="num">{money(x.amount)}</span> to {x.toUserId ? memberName(x.toUserId) : 'common account'}
         {onUndo && <button type="button" className="text-stone-400 hover:text-rose-600" title="Undo this share" aria-label="Undo this share" onClick={() => onUndo(x.id)}>×</button>}
       </span>,
     );
@@ -560,10 +560,10 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
     ...(partner ? [{ label: `${partner.displayName} (no account)`, value: `user:${partner.userId}` }] : []),
     ...(accounts.data ?? [])
       .filter((a) => !a.archived && a.group === 'cash' && (a.type === 'common' || a.ownerId === partner?.userId))
-      .map((a) => ({ label: `${a.type === 'common' ? 'Joint' : partner?.displayName} · ${a.name} · ${label('bank', a.bank)}`, value: `acct:${a.id}` })),
+      .map((a) => ({ label: `${a.type === 'common' ? 'Common' : partner?.displayName} · ${a.name} · ${label('bank', a.bank)}`, value: `acct:${a.id}` })),
   ];
   const sendToName = sendTo.startsWith('user:') ? memberName(sendTo.slice(5))
-    : (accounts.data ?? []).find((a) => `acct:${a.id}` === sendTo)?.type === 'common' ? 'the joint account' : partner?.displayName ?? '';
+    : (accounts.data ?? []).find((a) => `acct:${a.id}` === sendTo)?.type === 'common' ? 'the common account' : partner?.displayName ?? '';
 
   async function submit(e: FormEvent) {
     e.preventDefault();

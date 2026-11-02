@@ -23,10 +23,10 @@ function Amount({ value, currency, className, signed }: { value: number | null; 
   return <span className={cx('num whitespace-nowrap', value < 0 && 'text-rose-700', className)}>{signed && value > 0 ? '+' : ''}{moneyIn(value, currency)}</span>;
 }
 
-/** Owner dropdown value: a member id, or "common" for joint accounts. */
+/** Owner dropdown value: a member id, or "common" for the shared account both partners pay common bills from. */
 function useOwnerOptions(): Option[] {
   const { workspace } = useAuth();
-  return [...(workspace?.members ?? []).map((m) => ({ label: m.displayName, value: m.userId })), { label: 'Joint', value: 'common' }];
+  return [...(workspace?.members ?? []).map((m) => ({ label: m.displayName, value: m.userId })), { label: 'Common', value: 'common' }];
 }
 
 // ---------------- Add accounts (editable table) ----------------
@@ -174,7 +174,7 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
       </div>
       <div className="grid grid-cols-3 gap-3">
         {isCouple && (
-          <Field label="Owner">
+          <Field label="Owner" hint="Common: the shared account you both move money into for common bills. Your own savings stay under your name.">
             <Select value={f.type === 'common' ? 'common' : f.ownerId} options={ownerOptions}
               onChange={(v) => setF(v === 'common' ? { ...f, type: 'common' } : { ...f, type: 'personal', ownerId: v })} />
           </Field>
@@ -468,7 +468,7 @@ export default function Accounts() {
                   <div className="text-[11px] text-stone-500">{label('bank', a.bank)} · {label('accountType', a.accountType)}{!a.recordedThisMonth && a.lastRecordedMonth && ` · calculated from ${monthLabel(a.lastRecordedMonth, 'short')}`}</div>
                 </div>
               )} />
-              {isCouple && <Column header="Owner" body={(a: WealthAccount) => a.type === 'common' ? <Badge tone="violet">Joint</Badge> : <span className="text-xs text-stone-600">{memberName(a.ownerId)}</span>} />}
+              {isCouple && <Column header="Owner" body={(a: WealthAccount) => a.type === 'common' ? <Badge tone="violet">Common</Badge> : <span className="text-xs text-stone-600">{memberName(a.ownerId)}</span>} />}
               <Column header={monthLabel(addMonths(month, -1), 'short')} align="right" body={(a: WealthAccount) => <span className="text-stone-500"><Amount value={a.previous} currency={a.currency} /></span>} />
               <Column header={monthLabel(month, 'short')} align="right" body={(a: WealthAccount) => <Amount value={a.current} currency={a.currency} className={cx('font-medium', !a.recordedThisMonth && 'text-stone-400')} />} />
               {/* For loans a falling balance is good, so colour by the effect on net worth. */}

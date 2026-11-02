@@ -264,7 +264,7 @@ export async function sendShare(
     throw badRequest('Choose who receives the share');
   }
   if (to) await assertMember(workspaceId, to, 'toUserId');
-  if (to === from) throw badRequest('Send the share to your partner or a joint account');
+  if (to === from) throw badRequest('Send the share to your partner or a common account');
   if (input.fromAccountId && input.fromAccountId === input.toAccountId) throw badRequest('Choose two different accounts');
   const date = early
     ? today()
