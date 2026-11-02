@@ -540,7 +540,8 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
     const mine = target.shares ? standing(target, me) : null;
     setSendAmount(mine ? r2(Math.max(0, mine.part - mine.paid - mine.sent)) || null : null);
     setSendTo(partner ? `user:${partner.userId}` : '');
-    setMode('pay');
+    // A bill your partner already paid in full: all that's left is sending them your share.
+    setMode(target.payment?.paid && target.type === 'common' && target.shares ? 'send' : 'pay');
     setSettles(false);
     setAccountId('');
     const dueDate = dateInMonth(month, target.dueDay ?? 1);
@@ -609,7 +610,7 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
   return (
     <Modal open={!!target} onClose={close} title={title}>
       <form onSubmit={submit} className="space-y-3">
-        {shared && <Tabs<PayMode> value={mode} onChange={(m) => { setMode(m); setAccountId(''); setError(null); }} items={PAY_MODES} full />}
+        {shared && !target?.payment?.paid && <Tabs<PayMode> value={mode} onChange={(m) => { setMode(m); setAccountId(''); setError(null); }} items={PAY_MODES} full />}
         <div className="grid grid-cols-2 gap-3">
           {sending
             ? <Field label="Amount (AED)"><NumberInput value={sendAmount} onChange={setSendAmount} min={0.01} required /></Field>
@@ -626,7 +627,9 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
         {sending ? (
           <>
             <p className="rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-900">
-              Your share goes to {sendToName || 'your partner'}, who pays the whole bill. It is not marked paid until the bill is paid; until then the settle-up shows {sendToName || 'they'} holding your money.
+              {target?.payment?.paid
+                ? <>The bill is already paid. This pays {sendToName || 'your partner'} back your share, and it is then shown as paid.</>
+                : <>Your share goes to {sendToName || 'your partner'}, who pays the whole bill. It is not marked paid until the bill is paid; until then the settle-up shows {sendToName || 'they'} holding your money.</>}
             </p>
             <Field label="Send to" hint="Choose an account to add the money to its balance.">
               <Select value={sendTo} onChange={setSendTo} options={sendOptions} />

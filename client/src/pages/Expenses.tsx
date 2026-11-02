@@ -10,12 +10,11 @@ import { api, errorText } from '../lib/api';
 import type { Account, Commitment, Expense } from '../lib/types';
 import { categoryLabel, dateLabel, monthLabel, thisMonth } from '../lib/format';
 import {
-  Badge, Button, Check, Empty, ErrorNote, IconButton, Modal, Money, Page, PageHeader, Select, TableCard, usePaging, TableSkeleton, Tabs, TypeBadge, confirmAction, useToast,
+  Badge, Button, Check, Empty, ErrorNote, IconButton, Modal, Money, Page, PageHeader, TableCard, usePaging, TableSkeleton, Tabs, TypeBadge, confirmAction, useToast,
 } from '../components/ui';
-import { ExpenseForm } from '../components/forms';
+import { ExpenseForm, PayCommitmentModal } from '../components/forms';
 import { CategoryIcon } from '../components/CategoryIcon';
 
-type Filter = 'all' | 'personal' | 'common';
 
 export default function Expenses({ openNew = false }: { openNew?: boolean }) {
   const { month } = useMonth();
@@ -38,19 +37,24 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
     const sent = commitments.data?.find((c) => c.id === e.commitmentId)?.payment?.sent ?? [];
     return sent.filter((x) => x.fromUserId === s.userId).reduce((a, x) => a + x.amount, 0) >= s.amount - 0.005;
   };
-  const [filter, setFilter] = useState<Filter>('all');
-  // Opens on your own costs; "Everyone" shows the whole household.
-  const [person, setPerson] = useState<string>(isCouple && user ? user.id : 'all');
+  // 'all' | 'common' | a member id (everything they have a part in). Opens on your own.
+  const [filter, setFilter] = useState<string>(isCouple && user ? user.id : 'all');
   const [editing, setEditing] = useState<Expense | 'new' | null>(openNew && !future ? 'new' : null);
-  const paging = usePaging([month, filter, person, showArchived]);
+  const [paying, setPaying] = useState<Commitment | null>(null);
+  const paging = usePaging([month, filter, showArchived]);
 
-  const rows = useMemo(
-    () => (data ?? []).filter((e) => (filter === 'all' || e.type === filter) && (person === 'all' || e.shares.some((s) => s.userId === person))),
-    [data, filter, person],
-  );
+  const forFilter = (e: Expense) => filter === 'all' || (filter === 'common' ? e.type === 'common' : e.shares.some((s) => s.userId === filter));
+  const rows = useMemo(() => (data ?? []).filter(forFilter), [data, filter]); // eslint-disable-line react-hooks/exhaustive-deps
   const active = rows.filter((e) => e.status === 'active');
-  /** Whose cost the "Mine" column shows: the chosen person, or you when showing everyone. */
-  const who = person === 'all' ? user!.id : person;
+  /** Whose cost the "Mine" column shows: the chosen person, or you otherwise. */
+  const who = filter === 'all' || filter === 'common' ? user!.id : filter;
+  /** The linked common bill, when this person still has to send their share of it. */
+  const owingBill = (e: Expense, userId: string) => {
+    const s = e.shares.find((x) => x.userId === userId);
+    if (!s || !e.commitmentId || sharePaid(e, s)) return null;
+    return commitments.data?.find((c) => c.id === e.commitmentId) ?? null;
+  };
+  const unpaidShares = (e: Expense) => (e.type === 'common' ? e.shares.filter((s) => !sharePaid(e, s)) : []);
   const whoLabel = who === user!.id ? 'Mine' : `${memberName(who)}’s cost`;
   const costOf = (e: Expense) => e.shares.filter((s) => s.userId === who).reduce((x, s) => x + s.amount, 0);
   const total = active.reduce((a, e) => a + e.amount, 0);
@@ -91,17 +95,11 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
       )}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {isCouple && (
-          <>
-            <Tabs<Filter> value={filter} onChange={setFilter} items={[{ value: 'all', label: 'All' }, { value: 'personal', label: 'Personal' }, { value: 'common', label: 'Common' }]} />
-            <div className="w-48">
-              <Select
-                value={person}
-                onChange={(v) => setPerson(v || 'all')}
-                ariaLabel="Filter by person"
-                options={[{ label: 'Everyone', value: 'all' }, ...(workspace?.members ?? []).map((m) => ({ label: `${m.displayName}'s costs`, value: m.userId }))]}
-              />
-            </div>
-          </>
+          <Tabs<string> value={filter} onChange={setFilter} items={[
+            { value: 'all', label: 'All' },
+            { value: 'common', label: 'Common' },
+            ...(workspace?.members ?? []).map((m) => ({ value: m.userId, label: m.displayName })),
+          ]} />
         )}
         <span className="ml-auto"><Check checked={showArchived} onChange={setShowArchived} label="Show archived" /></span>
       </div>
@@ -147,9 +145,7 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
           {isCouple && <Column header="Type" body={(e: Expense) => (
             <div className="flex items-center gap-1.5"><TypeBadge type={e.type} />{e.type === 'personal' && e.ownerId !== e.paidBy && <span className="text-[11px] text-stone-500">for {memberName(e.ownerId)}</span>}</div>
           )} />}
-          {isCouple
-            ? <Column header="Paid by" body={(e: Expense) => <div><span className="text-stone-600">{memberName(e.paidBy)}</span>{fromAccount(e)}</div>} />
-            : <Column header="Paid from" body={(e: Expense) => fromAccount(e) || <span className="text-xs text-stone-400">—</span>} />}
+          {!isCouple && <Column header="Paid from" body={(e: Expense) => fromAccount(e) || <span className="text-xs text-stone-400">—</span>} />}
           <Column header="Amount" align="right" body={(e: Expense) => <Money value={e.amount} className="font-medium" />} />
           {isCouple && <Column header="Split" align="right" body={(e: Expense) => (
             <span className="text-xs text-stone-500">
@@ -163,6 +159,33 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
           {isCouple && <Column header={whoLabel} align="right" body={(e: Expense) => (
             costOf(e) > 0 ? <Money value={costOf(e)} className="font-semibold text-brand-700" /> : <span className="text-xs text-stone-300">—</span>
           )} />}
+          {isCouple && <Column header={monthLabel(month, 'short')} body={(e: Expense) => {
+            if (e.status !== 'active') return <span className="text-xs text-stone-400">—</span>;
+            if (unpaidShares(e).length === 0) return <span className="inline-flex items-center gap-1 text-xs text-brand-700"><CheckCircle2 className="size-3.5" /> Paid</span>;
+            // Your share of a common bill your partner paid: send it from here.
+            const bill = owingBill(e, user!.id);
+            if (bill) return <Button size="sm" onClick={() => setPaying(bill)}>Send my share</Button>;
+            return <span className="inline-flex items-center gap-1 text-xs text-rose-600"><Clock className="size-3.5" /> Pending</span>;
+          }} />}
+          {isCouple && <Column header="Who paid" body={(e: Expense) => {
+            const sent = e.commitmentId ? commitments.data?.find((c) => c.id === e.commitmentId)?.payment?.sent ?? [] : [];
+            return (
+              <div className="flex flex-col gap-0.5 text-[11px] leading-4">
+                <span className="text-brand-700">
+                  ✓ {memberName(e.paidBy)} {e.type === 'personal' && e.ownerId && e.ownerId !== e.paidBy ? 'supported' : 'paid'} <Money value={e.amount} />
+                </span>
+                {fromAccount(e)}
+                {sent.map((x) => (
+                  <span key={x.id} className="text-sky-700">↗ {memberName(x.fromUserId)} sent <Money value={x.amount} /> to {x.toUserId ? memberName(x.toUserId) : 'joint account'}</span>
+                ))}
+                {unpaidShares(e).map((s) => (
+                  <span key={s.userId} className="inline-flex items-center gap-1 text-rose-600">
+                    <Clock className="size-3" />{memberName(s.userId)} owes {memberName(e.paidBy)} <Money value={s.amount} />
+                  </span>
+                ))}
+              </div>
+            );
+          }} />}
           <Column align="right" style={{ width: '5.5rem' }} body={(e: Expense) => (
             <div className="whitespace-nowrap">
               {e.status === 'active' && <IconButton title="Edit" onClick={() => setEditing(e)}><Pencil className="size-3.5" /></IconButton>}
@@ -176,6 +199,7 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
       <Modal open={!!editing} onClose={close} title={editing === 'new' ? 'Add expense' : 'Edit expense'}>
         {editing && <ExpenseForm initial={editing === 'new' ? undefined : editing} month={month} onCancel={close} onSaved={() => { close(); reload(); }} />}
       </Modal>
+      <PayCommitmentModal target={paying} month={month} onClose={() => setPaying(null)} onPaid={() => { setPaying(null); reload(); commitments.reload(); }} />
     </Page>
   );
 }
