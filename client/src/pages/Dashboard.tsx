@@ -10,12 +10,13 @@ import { useApi } from '../lib/useApi';
 import type { Cards, Summary } from '../lib/types';
 import { addMonths, compact, money, monthLabel, monthShort, thisMonth } from '../lib/format';
 import { C, CATEGORY_COLORS, OTHER_COLOR } from '../lib/chartColors';
-import { BlockSkeleton, Button, ErrorNote, Money, Page, PageHeader, Skeleton, StatSkeleton, Tabs, TypeBadge, cx, usePaging } from '../components/ui';
+import { BlockSkeleton, Button, ErrorNote, Money, Page, PageHeader, Skeleton, StatSkeleton, Tabs, TypeBadge, cx } from '../components/ui';
 import { PayCommitmentModal, WhoPaid, payLabel } from '../components/forms';
 import { CategoryIcon } from '../components/CategoryIcon';
 
 type Member = Summary['cards']['members'][number];
 type Budget = Summary['budgetVsActual'][number];
+type DueFilter = 'all' | 'unpaid' | 'paid';
 
 /**
  * Explains the settle-up line: each common expense is split (50/50 unless its
@@ -32,7 +33,7 @@ function Settlement({ members, support, name }: { members: Member[]; support: Ca
         <ArrowRightLeft className="size-3.5 shrink-0 text-brand-600" />
         <span className="flex-1">
           {owed && owes
-            ? <><b>{name(owes.userId)}</b> owes <b>{name(owed.userId)}</b> AED <span className="num font-semibold">{money(owed.balance)}</span> for common expenses this month.</>
+            ? <><b>{name(owes.userId)}</b> owes <b>{name(owed.userId)}</b> AED <span className="num font-semibold">{money(owed.balance)}</span> for shared bills this month.</>
             : 'Common expenses are settled — each of you paid exactly your part.'}
           {support.map((x) => (
             <span key={`${x.from}>${x.to}`} className="ml-1 text-emerald-700"> · <b>{name(x.from)}</b> supported <b>{name(x.to)}</b> AED <span className="num font-semibold">{money(x.amount)}</span></span>
@@ -41,23 +42,30 @@ function Settlement({ members, support, name }: { members: Member[]; support: Ca
         <span className="flex items-center gap-0.5 font-medium text-brand-700">Why? <ChevronDown className={cx('size-3.5 transition-transform', open && 'rotate-180')} /></span>
       </button>
       {open && (
-        <div className="space-y-2 border-t border-stone-100 px-4 py-3">
-          <p>Every common expense (and common commitment marked paid) is split 50/50, or by the split set on its commitment (custom amounts or by salary). The settle-up compares what each person <i>paid</i> with their <i>part</i>:</p>
-          <div className="max-w-md overflow-hidden rounded-xl border border-stone-200">
-            <DataTable value={members} dataKey="userId" size="small">
-              <Column header="" body={(m: Member) => <span className="font-medium text-stone-800">{name(m.userId)}</span>} />
-              <Column header="Paid" align="right" body={(m: Member) => <Money value={m.commonPaid} />} />
-              <Column header="Their part" align="right" body={(m: Member) => <Money value={m.commonShare} />} />
-              <Column header="Difference" align="right" body={(m: Member) => <Money value={m.balance} signed />} />
-            </DataTable>
+        <div className="space-y-3 border-t border-stone-100 px-4 py-3">
+          <p>
+            Shared bills this month come to <b>AED <span className="num">{money(members.reduce((a, m) => a + m.commonShare, 0))}</span></b>.
+            Each of you has a part of them (half, unless a commitment uses another split).
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {members.map((m) => (
+              <div key={m.userId} className="rounded-xl border border-stone-200 px-3 py-2">
+                <div className="mb-1 font-semibold text-stone-800">{name(m.userId)}</div>
+                <div className="flex justify-between"><span>Their part</span><Money value={m.commonShare} /></div>
+                <div className="flex justify-between"><span>Actually paid</span><Money value={m.commonPaid} /></div>
+                <div className={cx('mt-1 flex justify-between border-t border-stone-100 pt-1 font-medium', m.balance < -0.004 ? 'text-rose-600' : m.balance > 0.004 ? 'text-emerald-700' : 'text-stone-700')}>
+                  <span>{m.balance < -0.004 ? 'Still to pay' : m.balance > 0.004 ? 'Paid extra' : 'All settled'}</span>
+                  {Math.abs(m.balance) > 0.004 && <Money value={Math.abs(m.balance)} />}
+                </div>
+              </div>
+            ))}
           </div>
           {owed && owes && (
-            <p>
-              {name(owed.userId)} paid <Money value={owed.balance} /> more than their part, so {name(owes.userId)} owes that amount.
-              Usually this happens because one person paid a big shared bill (like rent). Check “Paid by” on the
-              common expenses if it looks wrong — when you mark a commitment paid you can choose who paid it.
+            <p className="font-medium text-stone-800">
+              To settle up, {name(owes.userId)} sends {name(owed.userId)} AED <span className="num">{money(owed.balance)}</span>.
             </p>
           )}
+          <p className="text-[11px] text-stone-500">“Actually paid” counts the shared bills each of you paid and the shares sent to each other. If it looks wrong, check “Paid by” on the common expenses.</p>
         </div>
       )}
     </div>
@@ -73,8 +81,10 @@ const TINT: Record<Tint, { card: string; icon: string }> = {
 };
 
 /** Headline figure in a tinted card (top row). */
-function HeroStat({ tint, icon, label, value, footer, aside }: {
+function HeroStat({ tint, icon, label, value, footer, aside, tone }: {
   tint: Tint; icon: React.ReactNode; label: string; value: number; footer?: React.ReactNode; aside?: React.ReactNode;
+  /** Colour of the figure; defaults to red when negative. */
+  tone?: string;
 }) {
   return (
     <div className={cx('flex min-w-0 flex-col rounded-2xl border bg-linear-to-br from-white p-4 shadow-[0_1px_2px_rgba(22,25,37,0.04)]', TINT[tint].card)}>
@@ -83,7 +93,7 @@ function HeroStat({ tint, icon, label, value, footer, aside }: {
         <span className="truncate text-sm font-medium text-stone-700">{label}</span>
       </div>
       <div className="mt-3 flex flex-1 items-center justify-between gap-2">
-        <div className={cx('num truncate text-2xl font-semibold tracking-tight', value < 0 ? 'text-rose-700' : 'text-stone-900')}>
+        <div className={cx('num truncate text-2xl font-semibold tracking-tight', tone ?? (value < 0 ? 'text-rose-700' : 'text-stone-900'))}>
           <span className="mr-1 text-sm font-medium text-stone-400">AED</span>{money(value)}
         </div>
         {aside}
@@ -205,7 +215,7 @@ export default function Dashboard() {
   const [scope, setScope] = useState<string>(user!.id);
   const { data, error, loading, reload } = useApi<Summary>(`/summary?month=${month}&scope=${scope}`);
   const [paying, setPaying] = useState<Summary['commitmentsDue'][number] | null>(null);
-  const budgetPaging = usePaging([month, scope]);
+  const [dueFilter, setDueFilter] = useState<DueFilter>('all');
 
   const scopes = useMemo(() => {
     const ms = workspace!.members;
@@ -226,6 +236,7 @@ export default function Dashboard() {
   const at = trend.findIndex((t) => t.month === month);
   const prev = at > 0 ? trend[at - 1] : undefined;
   const goalPct = c && c.cashLeft > 0 ? (c.allocatedToGoals / c.cashLeft) * 100 : 0;
+  const dueRows = (data?.commitmentsDue ?? []).filter((d) => dueFilter === 'all' || d.paid === (dueFilter === 'paid'));
 
   return (
     <Page fill>
@@ -244,13 +255,16 @@ export default function Dashboard() {
       {c && data && (
         <div className={cx('flex flex-1 flex-col gap-4 transition-opacity', loading && 'opacity-60')}>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <HeroStat tint="blue" icon={<Wallet className="size-4" />} label="Cash left" value={c.cashLeft} footer="Received income − recorded outflow" />
+            <HeroStat tint="blue" icon={<Wallet className="size-4" />} label="Cash left" value={c.cashLeft} footer="Received income − recorded outflow"
+              tone={c.cashLeft < 0 ? 'text-rose-700' : c.cashLeft > 0 ? 'text-emerald-700' : 'text-stone-900'} />
             <HeroStat
               tint="pink" icon={<ReceiptText className="size-4" />} label="Total outflow" value={c.totalOutflow}
+              tone={c.totalOutflow > c.incomeReceived ? 'text-rose-700' : 'text-amber-700'}
               footer={prev && prev.outflow > 0 ? <Delta current={c.totalOutflow} previous={prev.outflow} goodWhenUp={false} /> : 'Spending recorded this month'}
             />
             <HeroStat
               tint="purple" icon={<Coins className="size-4" />} label="Income received" value={c.incomeReceived}
+              tone={c.incomePending > 0 ? 'text-amber-700' : 'text-emerald-700'}
               footer={<>of <span className="num">{money(c.incomeExpected)}</span> expected{c.incomePending > 0 && <> · <span className="num">{money(c.incomePending)}</span> pending</>}</>}
               aside={trend.length > 1 && (
                 <div className="h-10 w-24 shrink-0" title="Income received · last 6 months">
@@ -318,13 +332,13 @@ export default function Dashboard() {
             </ChartCard>
           </div>
 
-          <div className="grid gap-4 lg:min-h-64 lg:flex-1 lg:grid-cols-5 lg:grid-rows-[minmax(0,1fr)]">
-            <section className="card table-fill flex min-h-0 min-w-0 flex-col overflow-hidden lg:col-span-3">
+          <div className="grid gap-4 lg:grid-cols-5 lg:grid-rows-[26rem]">
+            <section className="card table-fill flex h-104 min-h-0 min-w-0 flex-col overflow-hidden lg:col-span-3">
               <h2 className="shrink-0 px-4 pb-2 pt-4 text-sm font-semibold text-stone-800">Budget vs actual</h2>
               {data.budgetVsActual.length === 0 ? (
                 <p className="py-6 text-center text-xs text-stone-500">No commitments or expenses this month.</p>
               ) : (
-                <DataTable value={data.budgetVsActual} dataKey="category" size="small" {...budgetPaging}>
+                <DataTable value={data.budgetVsActual} dataKey="category" size="small" scrollable>
                   <Column header="Category" body={(r: Budget) => <span className="flex items-center gap-2.5"><CategoryIcon category={r.category} size="sm" />{r.category}</span>} />
                   <Column header="Planned" align="right" body={(r: Budget) => <Money value={r.planned} className="text-stone-500" />} />
                   <Column header="Actual" align="right" body={(r: Budget) => <Money value={r.actual} />} />
@@ -341,13 +355,20 @@ export default function Dashboard() {
               )}
             </section>
 
-            <section className="card flex min-h-0 min-w-0 flex-col lg:col-span-2">
-              <h2 className="shrink-0 px-4 pb-2 pt-4 text-sm font-semibold text-stone-800">Commitments this month</h2>
-              {data.commitmentsDue.length === 0 ? (
-                <p className="py-6 text-center text-xs text-stone-500">No commitments this month.</p>
+            <section className="card flex h-104 min-h-0 min-w-0 flex-col overflow-hidden lg:col-span-2">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-stone-100 px-4 pb-2 pt-3">
+                <h2 className="text-sm font-semibold text-stone-800">Commitments this month</h2>
+                <Tabs<DueFilter> value={dueFilter} onChange={setDueFilter} items={[
+                  { value: 'all', label: 'All', count: data.commitmentsDue.length },
+                  { value: 'unpaid', label: 'Unpaid', count: data.commitmentsDue.filter((d) => !d.paid).length },
+                  { value: 'paid', label: 'Paid', count: data.commitmentsDue.filter((d) => d.paid).length },
+                ]} />
+              </div>
+              {dueRows.length === 0 ? (
+                <p className="py-6 text-center text-xs text-stone-500">{data.commitmentsDue.length === 0 ? 'No commitments this month.' : dueFilter === 'paid' ? 'Nothing paid yet.' : 'Everything is paid.'}</p>
               ) : (
                 <ul className="scroll-thin min-h-0 flex-1 divide-y divide-stone-100 overflow-y-auto px-4 pb-2">
-                  {data.commitmentsDue.map((d) => (
+                  {dueRows.map((d) => (
                     <li key={d.id} className="flex items-center gap-3 py-2.5">
                       {d.paid
                         ? <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle2 className="size-4" /></span>

@@ -215,10 +215,11 @@ const isOpeningBalance = (b: { opening?: boolean | null; month: string }, opened
 
 /** Income, expenses and transfers linked to the workspace's accounts, up to the end of `month`. */
 async function loadLinkedMoney(workspaceId: string, accountIds: string[], month: string) {
-  // Income for next month's budget can already be in the bank (paid at the end of this month).
+  // Income for next month's budget can already be in the bank (paid at the end of this month),
+  // and next month's bills can already be paid.
   const [incomes, expenses, transfers, contributions] = await Promise.all([
     Income.find({ workspaceId, month: { $lte: addMonths(month, 1) }, status: { $ne: 'archived' } }).lean(),
-    Expense.find({ workspaceId, month: { $lte: month }, status: 'active' }).lean(),
+    Expense.find({ workspaceId, month: { $lte: addMonths(month, 1) }, status: 'active' }).lean(),
     Transfer.find({ workspaceId, status: 'active', month: { $lte: month } }).lean(),
     Contribution.find({ workspaceId, status: 'active', date: { $lte: `${month}-31` } }).lean(),
   ]);
@@ -230,7 +231,7 @@ async function loadLinkedMoney(workspaceId: string, accountIds: string[], month:
       status: i.status, accountId: linked(i.accountId),
     })),
     expenses: expenses.map((e) => ({
-      month: e.month, amount: e.amount, accountId: linked(e.accountId),
+      month: e.month, date: e.date, amount: e.amount, accountId: linked(e.accountId),
       shares: e.shares.map((s) => ({ userId: String(s.userId), amount: s.amount })),
     })),
     transfers: transfers

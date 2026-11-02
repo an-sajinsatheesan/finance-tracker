@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Plus } from 'lucide-react';
+import { Clock, Plus } from 'lucide-react';
 import { api, errorText } from '../lib/api';
 import type { Account, Category, Commitment, CommitmentPayment, Expense, Kind, LookupItem, LookupType, Share, SplitMode } from '../lib/types';
 import { previewSplit, salaryOf, SPLIT_LABEL } from '../lib/split';
@@ -466,13 +466,24 @@ export function WhoPaid({ c, onUndo, compact }: { c: PayTarget; onUndo?: (shareI
       </span>,
     );
   }
-  if (p && !p.paid) {
-    if (isCouple && c.type === 'common' && c.shares) {
-      for (const m of workspace?.members ?? []) {
-        const s = standing(c, m.userId);
-        if (s.due > 0) items.push(<span key={`d${m.userId}`} className="text-amber-700">{memberName(m.userId)} to pay <span className="num">{money(s.due)}</span></span>);
+  if (p && isCouple && c.type === 'common' && c.shares) {
+    const members = workspace?.members ?? [];
+    for (const m of members) {
+      const s = standing(c, m.userId);
+      const short = r2(s.part - s.paid - s.sent);
+      if (!p.paid && s.due > 0) items.push(<span key={`d${m.userId}`} className="text-amber-700">{memberName(m.userId)} to pay <span className="num">{money(s.due)}</span></span>);
+      else if (p.paid && short > 0.004) {
+        // The bill is paid, but by the partner: this person owes them their part.
+        const other = members.find((x) => x.userId !== m.userId);
+        items.push(
+          <span key={`o${m.userId}`} className="inline-flex items-center gap-1 text-rose-600">
+            <Clock className="size-3" />{memberName(m.userId)} owes {other ? memberName(other.userId) : 'their partner'} <span className="num">{money(short)}</span>
+          </span>,
+        );
       }
-    } else if (p.paidAmount > 0) {
+    }
+  } else if (p && !p.paid) {
+    if (p.paidAmount > 0) {
       items.push(<span key="left" className="text-amber-700"><span className="num">{money(p.remaining)}</span> left</span>);
     }
   }

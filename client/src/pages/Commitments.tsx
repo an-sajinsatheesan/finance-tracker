@@ -120,7 +120,7 @@ export default function Commitments() {
             c.type !== 'common' ? <span className="text-xs text-stone-500">—</span> : (
               <div className="text-[11px] leading-4 text-stone-500" title={`Split: ${SPLIT_LABEL[c.split?.mode ?? 'equal']}`}>
                 {(c.shares ?? []).map((x) => {
-                  const done = inMonth(c) && !future && (c.payment?.paid || standing({ ...c, amount: amountIn(c) }, x.userId).ownDone);
+                  const done = inMonth(c) && !future && standing({ ...c, amount: amountIn(c) }, x.userId).ownDone;
                   const pending = inMonth(c) && !future && !done;
                   return (
                     <div key={x.userId} className={cx('flex items-center justify-end gap-1', pending && 'text-rose-600')}>

@@ -210,7 +210,7 @@ function ListsPanel() {
 
 function BackupPanel() {
   const snapshots = useApi<Snapshot[]>('/backup/snapshots');
-  const paging = usePaging(null, 5);
+  const paging = usePaging(null);
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<{ name: string; data: unknown; report: Report } | null>(null);

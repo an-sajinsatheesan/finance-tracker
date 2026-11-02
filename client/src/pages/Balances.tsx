@@ -51,7 +51,7 @@ export default function BalancesPage() {
   const { data, error, loading } = useApi<Balances>(`/balances?month=${month}`);
   const [view, setView] = useState<View>('accounts');
   const accountPaging = usePaging(month);
-  const savingsPaging = usePaging(month, 12);
+  const savingsPaging = usePaging(month);
   const members = workspace?.members ?? [];
   const base = data?.base ?? workspace?.currency ?? 'AED';
   const fmt = (v: number) => `${base} ${moneyIn(v, base)}`;

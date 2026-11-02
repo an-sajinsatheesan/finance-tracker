@@ -141,7 +141,7 @@ export function Page({ children, fill }: { children: ReactNode; fill?: boolean }
  * Pagination props for a DataTable (spread them onto it). Goes back to the first
  * page whenever `resetOn` changes (month, filters, tab), so a page never points past the end.
  */
-export function usePaging(resetOn: unknown, rows = 10) {
+export function usePaging(resetOn: unknown, rows = 20) {
   const [state, setState] = useState({ first: 0, rows });
   const key = JSON.stringify(resetOn);
   useEffect(() => setState((s) => ({ ...s, first: 0 })), [key]);
@@ -150,7 +150,7 @@ export function usePaging(resetOn: unknown, rows = 10) {
     alwaysShowPaginator: true,
     first: state.first,
     rows: state.rows,
-    rowsPerPageOptions: [...new Set([rows, 10, 25, 50, 100])].sort((a, b) => a - b),
+    rowsPerPageOptions: [...new Set([rows, 10, 20, 50, 100])].sort((a, b) => a - b),
     onPage: (e: DataTablePageEvent) => setState({ first: e.first, rows: e.rows }),
     paginatorTemplate: 'FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown CurrentPageReport',
     currentPageReportTemplate: '{first}–{last} of {totalRecords}',

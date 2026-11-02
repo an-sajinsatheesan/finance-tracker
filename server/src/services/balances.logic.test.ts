@@ -62,6 +62,16 @@ describe('calculated balances', () => {
     expect(row('joint')).toMatchObject({ opening: 0, moneyIn: 4000, moneyOut: 3000, closing: 1000 });
   });
 
+  it('takes next month’s bill paid early out on the day it was paid', () => {
+    const early = { month: '2026-11', date: '2026-10-31', amount: 2500, accountId: 'enbd', shares: share('u1', 2500) };
+    const r = computeBalances({ ...base, expenses: [...base.expenses, early] });
+    expect(r.accounts.find((a) => a.id === 'enbd')).toMatchObject({ moneyOut: 7500, closing: 11500 });
+    expect(computeBalances({ ...base, expenses: [...base.expenses, early], month: '2026-11' }).accounts.find((a) => a.id === 'enbd'))
+      .toMatchObject({ moneyOut: 0, closing: 11500 });
+    // Still November's spending in the savings table, not October's.
+    expect(r.savings.find((s) => s.month === '2026-10')!.members.find((m) => m.userId === 'u1')!.spent).toBe(1000 + 1500 + 400);
+  });
+
   it('raises a credit card balance when it pays for something', () => {
     expect(row('card').closing).toBe(400);
   });
