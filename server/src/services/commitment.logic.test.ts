@@ -17,6 +17,11 @@ describe('commitment payment status', () => {
     expect(paymentStatus(400, [{ amount: 300, paidBy: 's', settlesCommitment: true }])).toMatchObject({ paid: true, remaining: 100 });
     expect(paymentStatus(400, [{ amount: 300, paidBy: 's' }])).toMatchObject({ paid: true });
   });
+
+  it('credits each partner their share when the bill is paid from the common account', () => {
+    const p = paymentStatus(320, [{ amount: 320, paidBy: 'a', fromCommon: true, shares: [{ userId: 's', amount: 160 }, { userId: 'a', amount: 160 }] }]);
+    expect(p).toMatchObject({ paid: true, contributions: [{ userId: 's', amount: 160 }, { userId: 'a', amount: 160 }] });
+  });
 });
 
 describe('common commitment split', () => {

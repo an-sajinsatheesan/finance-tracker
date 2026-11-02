@@ -44,8 +44,12 @@ export function normalizeHistory(history: { fromMonth: string; amount: number }[
   return [{ fromMonth: startMonth, amount: base.amount }, ...sorted.filter((v) => v.fromMonth > startMonth)];
 }
 
-const toPayment = (e: { amount: number; paidBy: unknown; settlesCommitment?: boolean | null }): PaymentLike =>
-  ({ amount: e.amount, paidBy: String(e.paidBy), settlesCommitment: e.settlesCommitment });
+type PaidExpense = { amount: number; paidBy: unknown; settlesCommitment?: boolean | null; accountId?: unknown; shares?: { userId: unknown; amount: number }[] };
+const toPayment = (e: PaidExpense, common: Set<string> = new Set()): PaymentLike => ({
+  amount: e.amount, paidBy: String(e.paidBy), settlesCommitment: e.settlesCommitment,
+  fromCommon: !!e.accountId && common.has(String(e.accountId)),
+  shares: (e.shares ?? []).map((s) => ({ userId: String(s.userId), amount: s.amount })),
+});
 
 /** Each member's planned part of a common commitment in a month (by its split). */
 export function plannedShares(c: any, month: string, members: string[], income: Record<string, number>) {
@@ -83,16 +87,18 @@ export function serializeCommitment(c: any, refMonth = currentMonth(), payments?
 
 /** Commitments as of a month, each with what has been paid towards it in that month. */
 export async function listCommitments(workspaceId: string, refMonth = currentMonth()) {
-  const [list, expenses, members, income, contributions] = await Promise.all([
+  const [list, expenses, members, income, contributions, commonAccounts] = await Promise.all([
     commitmentRepository.list(workspaceId),
     expenseRepository.listActiveByMonth(workspaceId, refMonth),
     memberIds(workspaceId),
     incomeByMember(workspaceId, refMonth),
     Contribution.find({ workspaceId, month: refMonth, status: 'active' }).sort({ date: 1, createdAt: 1 }).lean(),
+    Account.find({ workspaceId, type: 'common' }, { _id: 1 }).lean(),
   ]);
+  const common = new Set(commonAccounts.map((a) => String(a._id)));
   return list.map((c) => serializeCommitment(
     c, refMonth,
-    expenses.filter((e) => String(e.commitmentId) === String(c._id)).map(toPayment),
+    expenses.filter((e) => String(e.commitmentId) === String(c._id)).map((e) => toPayment(e, common)),
     plannedShares(c, refMonth, members, income),
     contributions.filter((x) => String(x.commitmentId) === String(c._id)),
   ));
@@ -207,7 +213,7 @@ export async function payCommitment(
   const c = await commitmentRepository.findById(workspaceId, id);
   if (!c) throw notFound('Commitment');
   const planned = amountFor(c, input.month);
-  const before = paymentStatus(planned, (await expenseRepository.listForCommitment(workspaceId, id, input.month)).map(toPayment));
+  const before = paymentStatus(planned, (await expenseRepository.listForCommitment(workspaceId, id, input.month)).map((e) => toPayment(e)));
   if (before.paid) throw badRequest('This commitment is already recorded as paid for that month');
   const amount = round2(input.amount ?? before.remaining);
   if (amount <= 0) throw badRequest('Enter the amount');

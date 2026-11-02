@@ -8,7 +8,14 @@ export interface CommitmentLike {
 
 export type CommitmentStatus = 'active' | 'scheduled' | 'ended';
 
-export interface PaymentLike { amount: number; paidBy: string; settlesCommitment?: boolean | null }
+/**
+ * `fromCommon`: paid from the couple's common account, so each partner paid their own
+ * share of it (`shares`) rather than the person who recorded it.
+ */
+export interface PaymentLike {
+  amount: number; paidBy: string; settlesCommitment?: boolean | null;
+  fromCommon?: boolean; shares?: { userId: string; amount: number }[];
+}
 
 /**
  * What has been paid towards a commitment in a month. Several payments can add up
@@ -18,7 +25,11 @@ export interface PaymentLike { amount: number; paidBy: string; settlesCommitment
 export function paymentStatus(planned: number, payments: PaymentLike[]) {
   const paidAmount = Math.round(payments.reduce((a, p) => a + p.amount, 0) * 100) / 100;
   const byPerson = new Map<string, number>();
-  for (const p of payments) byPerson.set(p.paidBy, Math.round(((byPerson.get(p.paidBy) ?? 0) + p.amount) * 100) / 100);
+  const add = (userId: string, v: number) => byPerson.set(userId, Math.round(((byPerson.get(userId) ?? 0) + v) * 100) / 100);
+  for (const p of payments) {
+    if (p.fromCommon && p.shares?.length) for (const s of p.shares) add(s.userId, s.amount);
+    else add(p.paidBy, p.amount);
+  }
   return {
     paidAmount,
     remaining: Math.max(0, Math.round((planned - paidAmount) * 100) / 100),

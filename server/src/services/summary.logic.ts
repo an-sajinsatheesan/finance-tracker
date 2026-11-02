@@ -206,7 +206,9 @@ export function computeCommitmentsDue(d: Dataset, month: string, scope: Scope) {
     .filter((c) => isActiveIn(c, month) && (scope === 'common' ? c.type === 'common' : c.type === 'common' || c.ownerId === scope))
     .map((c) => {
       const amount = amountFor(c, month);
-      const payment = paymentStatus(amount, d.expenses.filter((e) => e.month === month && e.commitmentId === c.id));
+      const joint = new Set(d.jointAccountIds ?? []);
+      const payment = paymentStatus(amount, d.expenses.filter((e) => e.month === month && e.commitmentId === c.id)
+        .map((e) => ({ ...e, fromCommon: !!e.accountId && joint.has(e.accountId) })));
       const sent = (d.contributions ?? []).filter((x) => x.month === month && x.commitmentId === c.id)
         .map((x) => ({ id: x.id, fromUserId: x.fromUserId, toUserId: x.toUserId ?? null, toAccountId: x.toAccountId ?? null, amount: x.amount, date: x.date }));
       return {

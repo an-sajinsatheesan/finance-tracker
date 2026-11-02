@@ -26,6 +26,8 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
   const { data, error, loading, reload } = useApi<Expense[]>(`/expenses?month=${month}&includeArchived=${showArchived}`);
   const accounts = useApi<Account[]>('/accounts');
   const accountName = (id?: string | null) => (id ? accounts.data?.find((a) => a.id === id)?.name : undefined);
+  /** Paid from the couple's common account: each partner paid their own share of it. */
+  const fromCommon = (e: Expense) => e.type === 'common' && !!e.accountId && accounts.data?.find((a) => a.id === e.accountId)?.type === 'common';
   const fromAccount = (e: Expense) => accountName(e.accountId) && (
     <div className="flex items-center gap-1 text-[11px] text-stone-500"><CreditCard className="size-3" />{accountName(e.accountId)}</div>
   );
@@ -41,7 +43,8 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
         return { userId: s.userId, amount: s.amount, done: st.ownDone, open: Math.max(0, Math.round((st.part - st.paid - st.sent) * 100) / 100) };
       });
     }
-    return e.shares.map((s) => ({ userId: s.userId, amount: s.amount, done: e.type !== 'common' || s.userId === e.paidBy, open: s.userId === e.paidBy ? 0 : s.amount }));
+    const settled = (userId: string) => e.type !== 'common' || userId === e.paidBy || fromCommon(e);
+    return e.shares.map((s) => ({ userId: s.userId, amount: s.amount, done: settled(s.userId), open: settled(s.userId) ? 0 : s.amount }));
   };
   // 'all' | 'common' | a member id (everything they have a part in). Opens on your own.
   const [filter, setFilter] = useState<string>(isCouple && user ? user.id : 'all');
@@ -176,9 +179,13 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
             const sent = e.commitmentId ? commitments.data?.find((c) => c.id === e.commitmentId)?.payment?.sent ?? [] : [];
             return (
               <div className="flex flex-col gap-0.5 text-[11px] leading-4">
-                <span className="text-brand-700">
-                  ✓ {memberName(e.paidBy)} {e.type === 'personal' && e.ownerId && e.ownerId !== e.paidBy ? 'supported' : 'paid'} <Money value={e.amount} />
-                </span>
+                {fromCommon(e)
+                  ? <span className="text-brand-700">✓ Paid from the common account: {e.shares.map((s) => <span key={s.userId}>{memberName(s.userId)} <Money value={s.amount} /> </span>)}</span>
+                  : (
+                    <span className="text-brand-700">
+                      ✓ {memberName(e.paidBy)} {e.type === 'personal' && e.ownerId && e.ownerId !== e.paidBy ? 'supported' : 'paid'} <Money value={e.amount} />
+                    </span>
+                  )}
                 {fromAccount(e)}
                 {sent.map((x) => (
                   <span key={x.id} className="text-sky-700">↗ {memberName(x.fromUserId)} sent <Money value={x.amount} /> to {x.toUserId ? memberName(x.toUserId) : 'common account'}</span>
