@@ -243,6 +243,8 @@ export const accountUpdateSchema = z.object({
   openedMonth: month.optional(),
   notes: text(500).optional(),
   archived: z.boolean().optional(),
+  /** Balance at the start of `openedMonth` (null removes it). */
+  openingBalance: signedMoney.optional().nullable(),
 });
 
 export const balancesSaveSchema = z.object({

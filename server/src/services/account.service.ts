@@ -104,6 +104,17 @@ export async function updateAccount(workspaceId: string, id: string, input: Part
   doc.set('ownerId', merged.type === 'personal' ? merged.ownerId : undefined);
   await doc.save();
   if (doc.openedMonth !== oldOpened) await moveOpeningBalance(workspaceId, doc._id, oldOpened, doc.openedMonth);
+  if (input.openingBalance !== undefined) {
+    // The balance tracking starts from: later months build on it with the linked money.
+    if (input.openingBalance === null) await AccountBalance.deleteOne({ workspaceId, accountId: doc._id, month: doc.openedMonth, opening: true });
+    else {
+      await AccountBalance.updateOne(
+        { workspaceId, accountId: doc._id, month: doc.openedMonth },
+        { $set: { balance: round2(input.openingBalance), opening: true } },
+        { upsert: true },
+      );
+    }
+  }
   const groups = await groupsByType(workspaceId);
   return serialize(doc.toObject(), groups.get(doc.accountType) ?? 'cash');
 }

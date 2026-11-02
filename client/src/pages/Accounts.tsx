@@ -140,6 +140,11 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [addingBank, setAddingBank] = useState(false);
+  // The balance tracking starts from (entered when the account was added); editable to correct it.
+  const history = useApi<{ month: string; balance: number; opening?: boolean }[]>(`/accounts/${account.id}/balances`);
+  const savedOpening = history.data?.find((b) => b.month === account.openedMonth && b.opening)?.balance ?? null;
+  const [opening, setOpening] = useState<number | null | undefined>(undefined); // undefined: unchanged
+  const openingValue = opening === undefined ? savedOpening : opening;
 
   async function save(patch?: Partial<Account>) {
     setBusy(true);
@@ -148,6 +153,7 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
       await api.put(`/accounts/${account.id}`, patch ?? {
         name: f.name, bank: f.bank, accountType: f.accountType, type: f.type, ownerId: f.type === 'personal' ? f.ownerId : null,
         accountNumberLast4: f.accountNumberLast4, openedMonth: f.openedMonth, notes: f.notes,
+        ...(opening !== undefined && opening !== savedOpening && { openingBalance: opening }),
       });
       toast.success(patch?.archived ? `${account.name} closed` : `${f.name} saved`);
       onSaved();
@@ -182,6 +188,12 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
         <Field label="Last 4 digits"><TextInput value={f.accountNumberLast4} onChange={(v) => setF({ ...f, accountNumberLast4: v.replace(/\D/g, '').slice(0, 4) })} /></Field>
         <Field label="Tracked from"><MonthInput value={f.openedMonth} onChange={(v) => setF({ ...f, openedMonth: v })} /></Field>
       </div>
+      <Field
+        label={`Opening balance (${account.currency}, start of ${monthLabel(f.openedMonth)})`}
+        hint="What the account held when tracking started. Later months add the linked income, expenses and transfers to it."
+      >
+        <NumberInput value={openingValue} onChange={setOpening} placeholder={history.loading ? 'Loading…' : ''} ariaLabel="Opening balance" />
+      </Field>
       <Field label="Notes"><TextInput value={f.notes} onChange={(v) => setF({ ...f, notes: v })} maxLength={500} /></Field>
       <p className="text-[11px] text-stone-500">Currency: {account.currency} (fixed once balances exist).</p>
       <ErrorNote message={error} />
