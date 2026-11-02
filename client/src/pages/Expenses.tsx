@@ -2,12 +2,12 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
-import { Archive, ArchiveRestore, ArrowLeftRight, CreditCard, Lock, Pencil, Plus, Link2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowLeftRight, CheckCircle2, Clock, CreditCard, Lock, Pencil, Plus, Link2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useMonth } from '../context/MonthContext';
 import { useApi } from '../lib/useApi';
 import { api, errorText } from '../lib/api';
-import type { Account, Expense } from '../lib/types';
+import type { Account, Commitment, Expense } from '../lib/types';
 import { categoryLabel, dateLabel, monthLabel, thisMonth } from '../lib/format';
 import {
   Badge, Button, Check, Empty, ErrorNote, IconButton, Modal, Money, Page, PageHeader, Select, TableCard, usePaging, TableSkeleton, Tabs, TypeBadge, confirmAction, useToast,
@@ -30,6 +30,14 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
   const fromAccount = (e: Expense) => accountName(e.accountId) && (
     <div className="flex items-center gap-1 text-[11px] text-stone-500"><CreditCard className="size-3" />{accountName(e.accountId)}</div>
   );
+  const commitments = useApi<Commitment[]>(`/commitments?month=${month}`);
+  /** A person's part is paid when they paid the expense, or sent their share of the linked bill. */
+  const sharePaid = (e: Expense, s: Expense['shares'][number]) => {
+    if (s.userId === e.paidBy) return true;
+    if (!e.commitmentId) return false;
+    const sent = commitments.data?.find((c) => c.id === e.commitmentId)?.payment?.sent ?? [];
+    return sent.filter((x) => x.fromUserId === s.userId).reduce((a, x) => a + x.amount, 0) >= s.amount - 0.005;
+  };
   const [filter, setFilter] = useState<Filter>('all');
   const [person, setPerson] = useState<string>('all');
   const [editing, setEditing] = useState<Expense | 'new' | null>(openNew && !future ? 'new' : null);
@@ -133,7 +141,11 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
           {isCouple && <Column header={person === 'all' ? 'Split' : 'Their cost'} align="right" body={(e: Expense) => (
             <span className="text-xs text-stone-500">
               {person === 'all'
-                ? e.type === 'common' ? e.shares.map((s) => <div key={s.userId}>{memberName(s.userId)} <Money value={s.amount} /></div>) : '—'
+                ? e.type === 'common' ? e.shares.map((s) => (
+                  sharePaid(e, s)
+                    ? <div key={s.userId} className="flex items-center justify-end gap-1"><CheckCircle2 className="size-3.5 text-brand-700" aria-label="Paid" />{memberName(s.userId)} <Money value={s.amount} /></div>
+                    : <div key={s.userId} className="flex items-center justify-end gap-1 text-rose-600" title={`${memberName(s.userId)} still owes ${memberName(e.paidBy)}`}><Clock className="size-3.5" aria-label="Pending" />{memberName(s.userId)} <Money value={s.amount} /></div>
+                )) : '—'
                 : <Money value={costOf(e)} />}
             </span>
           )} />}

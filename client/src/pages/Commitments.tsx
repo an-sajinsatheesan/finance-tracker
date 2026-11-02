@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
-import { ArrowRight, Bell, BellOff, ReceiptText, CheckCircle2, Pencil, Plus, RotateCcw, CalendarX2, Trash2 } from 'lucide-react';
+import { ArrowRight, Bell, BellOff, ReceiptText, CheckCircle2, Clock, Pencil, Plus, RotateCcw, CalendarX2, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useMonth } from '../context/MonthContext';
 import { useApi } from '../lib/useApi';
@@ -9,9 +9,9 @@ import { api, errorText } from '../lib/api';
 import type { Commitment } from '../lib/types';
 import { addMonths, categoryLabel, money, monthLabel, thisMonth } from '../lib/format';
 import {
-  Button, Empty, ErrorNote, Field, IconButton, Modal, Money, MonthInput, Page, PageHeader, TableCard, TableSkeleton, Tabs, TypeBadge, confirmAction, usePaging, useToast,
+  Button, Empty, cx, ErrorNote, Field, IconButton, Modal, Money, MonthInput, Page, PageHeader, TableCard, TableSkeleton, Tabs, TypeBadge, confirmAction, usePaging, useToast,
 } from '../components/ui';
-import { CommitmentForm, PayCommitmentModal, WhoPaid, payLabel } from '../components/forms';
+import { CommitmentForm, PayCommitmentModal, WhoPaid, payLabel, standing } from '../components/forms';
 import { SPLIT_LABEL } from '../lib/split';
 import { CategoryIcon } from '../components/CategoryIcon';
 
@@ -119,7 +119,17 @@ export default function Commitments() {
           {isCouple && <Column header="Per person" align="right" body={(c: Commitment) => (
             c.type !== 'common' ? <span className="text-xs text-stone-500">—</span> : (
               <div className="text-[11px] leading-4 text-stone-500" title={`Split: ${SPLIT_LABEL[c.split?.mode ?? 'equal']}`}>
-                {(c.shares ?? []).map((x) => <div key={x.userId}>{memberName(x.userId)} <span className="num text-stone-700">{money(x.amount)}</span></div>)}
+                {(c.shares ?? []).map((x) => {
+                  const done = inMonth(c) && !future && (c.payment?.paid || standing({ ...c, amount: amountIn(c) }, x.userId).ownDone);
+                  const pending = inMonth(c) && !future && !done;
+                  return (
+                    <div key={x.userId} className={cx('flex items-center justify-end gap-1', pending && 'text-rose-600')}>
+                      {done && <CheckCircle2 className="size-3.5 text-brand-700" aria-label="Paid" />}
+                      {pending && <Clock className="size-3.5" aria-label="Pending" />}
+                      {memberName(x.userId)} <span className={cx('num', pending ? 'text-rose-600' : 'text-stone-700')}>{money(x.amount)}</span>
+                    </div>
+                  );
+                })}
                 {c.split?.mode && c.split.mode !== 'equal' && <div className="text-violet-700">{SPLIT_LABEL[c.split.mode]}</div>}
               </div>
             )
