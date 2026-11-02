@@ -82,6 +82,17 @@ describe('calculated balances', () => {
     expect(b.totals.household).toBe(14000 - 400 + 6000 + 1000);
   });
 
+  it('keeps each currency’s totals apart, in that currency', () => {
+    const r = computeBalances({
+      ...base,
+      accounts: [...base.accounts, acc('sbi', { currency: 'INR' })],
+      snapshots: [...base.snapshots, { accountId: 'sbi', month: '2026-09', balance: 250000 }],
+    });
+    expect(r.byCurrency.map((c) => c.currency)).toEqual(['AED', 'INR']);
+    expect(r.byCurrency[0].totals.household).toBe(14000 - 400 + 6000 + 1000);
+    expect(r.byCurrency[1].totals).toEqual({ household: 250000, joint: 0, members: { u1: 250000, u2: 0 } });
+  });
+
   it('shows the difference when a recorded balance does not match the linked money', () => {
     const r = computeBalances({ ...base, snapshots: [...base.snapshots, { accountId: 'rak', month: '2026-10', balance: 5500 }] });
     expect(r.accounts.find((a) => a.id === 'rak')).toMatchObject({ closing: 5500, recorded: true, untracked: -500 });

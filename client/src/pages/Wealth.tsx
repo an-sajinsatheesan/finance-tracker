@@ -5,7 +5,7 @@ import { ArrowRight, CreditCard, TrendingDown, TrendingUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useMonth } from '../context/MonthContext';
 import { useApi } from '../lib/useApi';
-import { api, errorText } from '../lib/api';
+
 import type { AccountGroup, Wealth } from '../lib/types';
 import { addMonths, compact, monthLabel, monthShort, moneyIn } from '../lib/format';
 import { C } from '../lib/chartColors';
@@ -13,7 +13,7 @@ import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { ColumnGroup } from 'primereact/columngroup';
 import { Row } from 'primereact/row';
-import { BlockSkeleton, Button, Empty, ErrorNote, NumberInput, Page, PageHeader, StatSkeleton, Tabs, cx, useToast } from '../components/ui';
+import { BlockSkeleton, Empty, ErrorNote, Page, PageHeader, StatSkeleton, Tabs, cx } from '../components/ui';
 import { GROUP_LABEL } from './Accounts';
 
 const tooltipStyle = { fontSize: 12, borderRadius: 10, border: '1px solid #e6e8ef', boxShadow: '0 4px 12px rgba(0,0,0,.06)' };
@@ -43,40 +43,6 @@ function NetTile({ title, currency, net, previous, change, sub }: { title: strin
         <Change value={change} currency={currency} />
       </div>
       {sub && <div className="mt-1 text-[11px] text-stone-500">{sub}</div>}
-    </div>
-  );
-}
-
-/** "1 AED = x INR" editor; the rate converts every currency into the base for the combined figure. */
-function RateEditor({ base, currencies, fx, onSaved }: { base: string; currencies: string[]; fx: Record<string, number>; onSaved: () => void }) {
-  const { refreshWorkspace } = useAuth();
-  const toast = useToast();
-  const [values, setValues] = useState<Record<string, number | null>>(() => Object.fromEntries(currencies.map((c) => [c, fx[c] ?? null])));
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const dirty = currencies.some((c) => (values[c] ?? null) !== (fx[c] ?? null));
-  async function save() {
-    setBusy(true); setError(null);
-    try {
-      const rates = Object.fromEntries(Object.entries(values).filter(([, v]) => !!v && v > 0));
-      await api.put('/workspace', { fxRates: rates });
-      await refreshWorkspace();
-      toast.success('Exchange rate saved');
-      onSaved();
-    } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
-  }
-  if (!currencies.length) return null;
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-stone-600">
-      {currencies.map((c) => (
-        <span key={c} className="flex items-center gap-1.5">
-          1 {base} =
-          <span className="w-28"><NumberInput value={values[c] ?? null} onChange={(v) => setValues({ ...values, [c]: v })} min={0} decimals={4} ariaLabel={`${c} per ${base}`} /></span>
-          {c}
-        </span>
-      ))}
-      {dirty && <Button size="sm" variant="primary" loading={busy} onClick={save}>Save rate</Button>}
-      <ErrorNote message={error} />
     </div>
   );
 }
@@ -154,7 +120,7 @@ export default function WealthPage() {
   const { month } = useMonth();
   const { user, workspace, isCouple } = useAuth();
   const [scope, setScope] = useState('all');
-  const { data, error, loading, reload } = useApi<Wealth>(`/wealth?month=${month}&scope=${scope}`);
+  const { data, error, loading } = useApi<Wealth>(`/wealth?month=${month}&scope=${scope}`);
 
   const scopes = useMemo(() => {
     const ms = workspace!.members;
@@ -166,11 +132,13 @@ export default function WealthPage() {
   }, [workspace, user]);
 
   const base = data?.base ?? 'AED';
-  const foreign = (data?.byCurrency ?? []).map((c) => c.currency).filter((c) => c !== base);
-  const rateCurrencies = [...new Set([...foreign, ...Object.keys(workspace?.fxRates ?? {})])];
-  const trend = (data?.trend ?? []).map((t) => ({ ...t, label: monthShort(t.month) }));
+  // UAE and Indian money are never added together: each currency has its own figures.
+  const currencies = (data?.byCurrency ?? []).map((c) => c.currency);
+  const [picked, setPicked] = useState<string | null>(null);
+  const cur = picked && currencies.includes(picked) ? picked : currencies[0] ?? base;
+  const trend = (data?.trend ?? []).map((t) => ({ ...t, label: monthShort(t.month), own: t.byCurrency[cur] ?? 0 }));
   const hasTransfers = trend.some((t) => t.transferredOut > 0);
-  const fmtBase = (v: number) => `${base} ${moneyIn(v, base)}`;
+  const fmtIn = (c: string) => (v: number) => `${c} ${moneyIn(v, c)}`;
 
   return (
     <Page>
@@ -196,32 +164,20 @@ export default function WealthPage() {
       )}
       {data && data.accounts.length > 0 && (
         <div className={cx('space-y-4', loading && 'opacity-60')}>
-          {(data.missingRates.length > 0 || data.staleAccounts.length > 0) && (
+          {data.staleAccounts.length > 0 && (
             <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              {data.missingRates.length > 0 && <div>Set the exchange rate for {data.missingRates.join(', ')} below — it’s left out of the combined total until then.</div>}
               {data.staleAccounts.length > 0 && <div>{data.staleAccounts.length} account{data.staleAccounts.length > 1 ? 's were' : ' was'} without an entered balance for {monthLabel(month)}; their balance is calculated from the last entered one plus linked income and expenses. <Link to="/accounts" className="font-medium underline">Update balances</Link></div>}
             </div>
           )}
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <NetTile
-              title={`Total net worth (in ${base})`} currency={base} net={data.combined.net} previous={data.combined.previousNet} change={data.combined.change}
-              sub={<>Assets <span className="num">{moneyIn(data.combined.assets, base)}</span> · Loans <span className="num">{moneyIn(data.combined.liabilities, base)}</span></>}
-            />
             {data.byCurrency.map((c) => (
               <NetTile
                 key={c.currency} title={`${c.currency} net worth${c.currency === 'INR' ? ' (India)' : c.currency === 'AED' ? ' (UAE)' : ''}`}
                 currency={c.currency} net={c.net} previous={c.previousNet} change={c.change}
-                sub={c.currency !== base ? <>≈ <span className="num">{base} {moneyIn(c.netInBase, base)}</span></> : undefined}
+                sub={<>Assets <span className="num">{moneyIn(c.assets, c.currency)}</span> · Loans <span className="num">{moneyIn(c.liabilities, c.currency)}</span></>}
               />
             ))}
-          </div>
-
-          <div className="card p-4">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-stone-800">Exchange rate</h2>
-              <RateEditor key={JSON.stringify(data.fx)} base={base} currencies={rateCurrencies} fx={data.fx} onSaved={reload} />
-            </div>
           </div>
 
           <section className="card min-w-0 p-4">
@@ -231,15 +187,18 @@ export default function WealthPage() {
 
           <div className="grid gap-4 lg:grid-cols-2">
             <section className="card min-w-0 p-4">
-              <h2 className="mb-2 text-sm font-semibold text-stone-800">Net worth · last 12 months ({base})</h2>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-stone-800">Net worth · last 12 months ({cur})</h2>
+                {currencies.length > 1 && <Tabs value={cur} onChange={setPicked} items={currencies.map((c) => ({ value: c, label: c }))} />}
+              </div>
               <div className="h-56">
                 <ResponsiveContainer>
                   <LineChart data={trend} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke={C.grid} />
                     <XAxis dataKey="label" {...axisProps} />
                     <YAxis {...axisProps} tickFormatter={compact} width={48} />
-                    <Tooltip formatter={(v: number) => [fmtBase(v), 'Net worth']} labelFormatter={(_l, p) => (p?.[0] ? monthLabel(p[0].payload.month) : '')} contentStyle={tooltipStyle} cursor={{ stroke: C.axis, strokeDasharray: '3 3' }} />
-                    <Line dataKey="net" name="Net worth" stroke={C.income} strokeWidth={2} dot={{ r: 3, strokeWidth: 0, fill: C.income }} activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2 }} />
+                    <Tooltip formatter={(v: number) => [fmtIn(cur)(v), 'Net worth']} labelFormatter={(_l, p) => (p?.[0] ? monthLabel(p[0].payload.month) : '')} contentStyle={tooltipStyle} cursor={{ stroke: C.axis, strokeDasharray: '3 3' }} />
+                    <Line dataKey="own" name="Net worth" stroke={C.income} strokeWidth={2} dot={{ r: 3, strokeWidth: 0, fill: C.income }} activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -253,7 +212,7 @@ export default function WealthPage() {
                       <CartesianGrid vertical={false} stroke={C.grid} />
                       <XAxis dataKey="label" {...axisProps} />
                       <YAxis {...axisProps} tickFormatter={compact} width={48} />
-                      <Tooltip formatter={(v: number) => [fmtBase(v), 'Transferred']} labelFormatter={(_l, p) => (p?.[0] ? monthLabel(p[0].payload.month) : '')} contentStyle={tooltipStyle} cursor={{ fill: '#f7f8fb' }} />
+                      <Tooltip formatter={(v: number) => [fmtIn(base)(v), 'Transferred']} labelFormatter={(_l, p) => (p?.[0] ? monthLabel(p[0].payload.month) : '')} contentStyle={tooltipStyle} cursor={{ fill: '#f7f8fb' }} />
                       <Bar dataKey="transferredOut" name="Transferred" fill={C.common} radius={[4, 4, 0, 0]} maxBarSize={18} />
                     </BarChart>
                   </ResponsiveContainer>

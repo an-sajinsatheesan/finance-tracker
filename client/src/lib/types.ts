@@ -129,6 +129,8 @@ export interface Balances {
   accounts: BalanceAccount[];
   totals: BalanceTotals;
   trend: ({ month: string } & BalanceTotals)[];
+  /** Totals kept apart per currency, each in its own currency. */
+  byCurrency: { currency: string; totals: BalanceTotals; trend: ({ month: string } & BalanceTotals)[] }[];
   savings: {
     month: string; income: number; spent: number; saved: number; cumulative: number;
     members: { userId: string; income: number; spent: number; saved: number }[];

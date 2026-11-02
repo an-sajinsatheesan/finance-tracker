@@ -19,7 +19,7 @@ type Filter = 'all' | 'personal' | 'common';
 
 export default function Expenses({ openNew = false }: { openNew?: boolean }) {
   const { month } = useMonth();
-  const { workspace, memberName, isCouple } = useAuth();
+  const { user, workspace, memberName, isCouple } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const future = month > thisMonth();
@@ -39,7 +39,8 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
     return sent.filter((x) => x.fromUserId === s.userId).reduce((a, x) => a + x.amount, 0) >= s.amount - 0.005;
   };
   const [filter, setFilter] = useState<Filter>('all');
-  const [person, setPerson] = useState<string>('all');
+  // Opens on your own costs; "Everyone" shows the whole household.
+  const [person, setPerson] = useState<string>(isCouple && user ? user.id : 'all');
   const [editing, setEditing] = useState<Expense | 'new' | null>(openNew && !future ? 'new' : null);
   const paging = usePaging([month, filter, person, showArchived]);
 
@@ -48,8 +49,12 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
     [data, filter, person],
   );
   const active = rows.filter((e) => e.status === 'active');
-  const costOf = (e: Expense) => (person === 'all' ? e.amount : e.shares.filter((s) => s.userId === person).reduce((x, s) => x + s.amount, 0));
-  const total = active.reduce((a, e) => a + costOf(e), 0);
+  /** Whose cost the "Mine" column shows: the chosen person, or you when showing everyone. */
+  const who = person === 'all' ? user!.id : person;
+  const whoLabel = who === user!.id ? 'Mine' : `${memberName(who)}’s cost`;
+  const costOf = (e: Expense) => e.shares.filter((s) => s.userId === who).reduce((x, s) => x + s.amount, 0);
+  const total = active.reduce((a, e) => a + e.amount, 0);
+  const whoTotal = active.reduce((a, e) => a + costOf(e), 0);
 
   function close() {
     setEditing(null);
@@ -109,11 +114,19 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
           size="small"
           tableStyle={{ minWidth: '44rem' }}
           rowClassName={(e: Expense) => (e.status === 'archived' ? 'row-muted' : '')}
-          emptyMessage={loading && !data ? <TableSkeleton cols={isCouple ? 6 : 4} /> : <Empty icon={<ArrowLeftRight className="size-8" />} title="No expenses recorded">Add one, or mark a commitment as paid.</Empty>}
+          emptyMessage={loading && !data ? <TableSkeleton cols={isCouple ? 7 : 4} /> : <Empty icon={<ArrowLeftRight className="size-8" />} title="No expenses recorded">Add one, or mark a commitment as paid.</Empty>}
           footer={rows.length > 0 && (
-            <div className="flex justify-between text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
               <span className="font-medium text-stone-600">{active.length} active expense{active.length === 1 ? '' : 's'}</span>
-              <span className="font-semibold">Total <Money value={total} /> AED</span>
+              <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                {isCouple && (
+                  <span className="text-stone-600" title="Your own expenses in full, plus your share of common ones">
+                    {whoLabel} <Money value={whoTotal} className="font-semibold text-brand-700" /> AED
+                    <span className="text-stone-400"> · paid <Money value={active.filter((e) => e.paidBy === who).reduce((a, e) => a + e.amount, 0)} /></span>
+                  </span>
+                )}
+                <span className="font-semibold">Total <Money value={total} /> AED</span>
+              </span>
             </div>
           )}
         >
@@ -138,16 +151,17 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
             ? <Column header="Paid by" body={(e: Expense) => <div><span className="text-stone-600">{memberName(e.paidBy)}</span>{fromAccount(e)}</div>} />
             : <Column header="Paid from" body={(e: Expense) => fromAccount(e) || <span className="text-xs text-stone-400">—</span>} />}
           <Column header="Amount" align="right" body={(e: Expense) => <Money value={e.amount} className="font-medium" />} />
-          {isCouple && <Column header={person === 'all' ? 'Split' : 'Their cost'} align="right" body={(e: Expense) => (
+          {isCouple && <Column header="Split" align="right" body={(e: Expense) => (
             <span className="text-xs text-stone-500">
-              {person === 'all'
-                ? e.type === 'common' ? e.shares.map((s) => (
-                  sharePaid(e, s)
-                    ? <div key={s.userId} className="flex items-center justify-end gap-1"><CheckCircle2 className="size-3.5 text-brand-700" aria-label="Paid" />{memberName(s.userId)} <Money value={s.amount} /></div>
-                    : <div key={s.userId} className="flex items-center justify-end gap-1 text-rose-600" title={`${memberName(s.userId)} still owes ${memberName(e.paidBy)}`}><Clock className="size-3.5" aria-label="Pending" />{memberName(s.userId)} <Money value={s.amount} /></div>
-                )) : '—'
-                : <Money value={costOf(e)} />}
+              {e.type === 'common' ? e.shares.map((s) => (
+                sharePaid(e, s)
+                  ? <div key={s.userId} className="flex items-center justify-end gap-1"><CheckCircle2 className="size-3.5 text-brand-700" aria-label="Paid" />{memberName(s.userId)} <Money value={s.amount} /></div>
+                  : <div key={s.userId} className="flex items-center justify-end gap-1 text-rose-600" title={`${memberName(s.userId)} still owes ${memberName(e.paidBy)}`}><Clock className="size-3.5" aria-label="Pending" />{memberName(s.userId)} <Money value={s.amount} /></div>
+              )) : '—'}
             </span>
+          )} />}
+          {isCouple && <Column header={whoLabel} align="right" body={(e: Expense) => (
+            costOf(e) > 0 ? <Money value={costOf(e)} className="font-semibold text-brand-700" /> : <span className="text-xs text-stone-300">—</span>
           )} />}
           <Column align="right" style={{ width: '5.5rem' }} body={(e: Expense) => (
             <div className="whitespace-nowrap">

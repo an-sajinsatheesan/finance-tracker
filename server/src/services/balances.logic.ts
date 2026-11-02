@@ -128,6 +128,21 @@ export function computeBalances(input: BalancesInput) {
   const trendMonths = Array.from({ length: count }, (_, i) => addMonths(month, i - count + 1));
   const trend = trendMonths.map((m) => ({ month: m, ...totalsFor(m) }));
 
+  /** The same totals kept apart per currency, in that currency (no exchange rate needed). */
+  const own = (m: string, cur: string, pick: (a: AccountRow) => boolean) =>
+    sum(accounts.filter((a) => a.currency === cur && pick(a)).map((a) => sign(a) * (balanceAt(a, m, snapshots, flows)?.balance ?? 0)));
+  const ownTotals = (m: string, cur: string) => ({
+    household: own(m, cur, () => true),
+    joint: own(m, cur, (a) => a.type === 'common'),
+    members: Object.fromEntries(memberIds.map((id) => [id, own(m, cur, (a) => a.type === 'personal' && a.ownerId === id)])),
+  });
+  const currencies = [...new Set(accounts.map((a) => a.currency))].sort((a, b) => (a === base ? -1 : b === base ? 1 : a.localeCompare(b)));
+  const byCurrency = currencies.map((cur) => ({
+    currency: cur,
+    totals: ownTotals(month, cur),
+    trend: trendMonths.map((m) => ({ month: m, ...ownTotals(m, cur) })),
+  }));
+
   // Savings per person: income received for the month minus what they bear of the month's spending.
   let cumulative = 0;
   const savings = trendMonths.filter((m) => m >= input.startMonth).map((m) => {
@@ -152,6 +167,7 @@ export function computeBalances(input: BalancesInput) {
     accounts: rows,
     totals: totalsFor(month),
     trend,
+    byCurrency,
     savings,
     unlinked: {
       expenses: { count: unlinkedExpenses.length, amount: sum(unlinkedExpenses.map((e) => e.amount)) },

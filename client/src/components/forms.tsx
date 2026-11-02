@@ -356,7 +356,10 @@ export function ExpenseForm({ initial, month, onSaved, onCancel }:
     try {
       if (initial) await api.put(`/expenses/${initial._id}`, body);
       else await api.post('/expenses', body);
-      toast.success(`${f.description} ${initial ? 'updated' : 'added'}`);
+      const savedMonth = f.date.slice(0, 7);
+      toast.success(savedMonth === month
+        ? `${f.description} ${initial ? 'updated' : 'added'}`
+        : `${f.description} ${initial ? 'moved' : 'added'} to ${monthLabel(savedMonth)} (its date), switch to that month to see it`);
       onSaved();
     } catch (err) {
       setError(errorText(err));
