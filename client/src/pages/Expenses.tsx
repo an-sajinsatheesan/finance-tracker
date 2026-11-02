@@ -12,7 +12,7 @@ import { categoryLabel, dateLabel, monthLabel, thisMonth } from '../lib/format';
 import {
   Badge, Button, Check, Empty, ErrorNote, IconButton, Modal, Money, Page, PageHeader, TableCard, usePaging, TableSkeleton, Tabs, TypeBadge, confirmAction, useToast,
 } from '../components/ui';
-import { ExpenseForm, PayCommitmentModal } from '../components/forms';
+import { ExpenseForm, PayCommitmentModal, standing } from '../components/forms';
 import { CategoryIcon } from '../components/CategoryIcon';
 
 
@@ -30,12 +30,18 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
     <div className="flex items-center gap-1 text-[11px] text-stone-500"><CreditCard className="size-3" />{accountName(e.accountId)}</div>
   );
   const commitments = useApi<Commitment[]>(`/commitments?month=${month}`);
-  /** A person's part is paid when they paid the expense, or sent their share of the linked bill. */
-  const sharePaid = (e: Expense, s: Expense['shares'][number]) => {
-    if (s.userId === e.paidBy) return true;
-    if (!e.commitmentId) return false;
-    const sent = commitments.data?.find((c) => c.id === e.commitmentId)?.payment?.sent ?? [];
-    return sent.filter((x) => x.fromUserId === s.userId).reduce((a, x) => a + x.amount, 0) >= s.amount - 0.005;
+  /** The common commitment this expense pays (each partner may pay their part as a separate expense). */
+  const billOf = (e: Expense) => (e.type === 'common' && e.commitmentId ? commitments.data?.find((c) => c.id === e.commitmentId && c.shares) : undefined);
+  /** Each person's part and what is still open: from the whole bill when linked, else from this expense. */
+  const parts = (e: Expense) => {
+    const bill = billOf(e);
+    if (bill) {
+      return bill.shares!.map((s) => {
+        const st = standing(bill, s.userId);
+        return { userId: s.userId, amount: s.amount, done: st.ownDone, open: Math.max(0, Math.round((st.part - st.paid - st.sent) * 100) / 100) };
+      });
+    }
+    return e.shares.map((s) => ({ userId: s.userId, amount: s.amount, done: e.type !== 'common' || s.userId === e.paidBy, open: s.userId === e.paidBy ? 0 : s.amount }));
   };
   // 'all' | 'common' | a member id (everything they have a part in). Opens on your own.
   const [filter, setFilter] = useState<string>(isCouple && user ? user.id : 'all');
@@ -48,13 +54,12 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
   const active = rows.filter((e) => e.status === 'active');
   /** Whose cost the "Mine" column shows: the chosen person, or you otherwise. */
   const who = filter === 'all' || filter === 'common' ? user!.id : filter;
-  /** The linked common bill, when this person still has to send their share of it. */
+  /** The linked common bill, when this person still has their part of it to pay or send. */
   const owingBill = (e: Expense, userId: string) => {
-    const s = e.shares.find((x) => x.userId === userId);
-    if (!s || !e.commitmentId || sharePaid(e, s)) return null;
-    return commitments.data?.find((c) => c.id === e.commitmentId) ?? null;
+    const bill = billOf(e);
+    return bill && parts(e).some((p) => p.userId === userId && !p.done) ? bill : null;
   };
-  const unpaidShares = (e: Expense) => (e.type === 'common' ? e.shares.filter((s) => !sharePaid(e, s)) : []);
+  const unpaidShares = (e: Expense) => (e.type === 'common' ? parts(e).filter((p) => !p.done) : []);
   const whoLabel = who === user!.id ? 'Mine' : `${memberName(who)}’s cost`;
   const costOf = (e: Expense) => e.shares.filter((s) => s.userId === who).reduce((x, s) => x + s.amount, 0);
   const total = active.reduce((a, e) => a + e.amount, 0);
@@ -149,10 +154,10 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
           <Column header="Amount" align="right" body={(e: Expense) => <Money value={e.amount} className="font-medium" />} />
           {isCouple && <Column header="Split" align="right" body={(e: Expense) => (
             <span className="text-xs text-stone-500">
-              {e.type === 'common' ? e.shares.map((s) => (
-                sharePaid(e, s)
+              {e.type === 'common' ? parts(e).map((s) => (
+                s.done
                   ? <div key={s.userId} className="flex items-center justify-end gap-1"><CheckCircle2 className="size-3.5 text-brand-700" aria-label="Paid" />{memberName(s.userId)} <Money value={s.amount} /></div>
-                  : <div key={s.userId} className="flex items-center justify-end gap-1 text-rose-600" title={`${memberName(s.userId)} still owes ${memberName(e.paidBy)}`}><Clock className="size-3.5" aria-label="Pending" />{memberName(s.userId)} <Money value={s.amount} /></div>
+                  : <div key={s.userId} className="flex items-center justify-end gap-1 text-rose-600" title={`${memberName(s.userId)} hasn’t paid their part yet`}><Clock className="size-3.5" aria-label="Pending" />{memberName(s.userId)} <Money value={s.amount} /></div>
               )) : '—'}
             </span>
           )} />}
@@ -162,9 +167,9 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
           {isCouple && <Column header={monthLabel(month, 'short')} body={(e: Expense) => {
             if (e.status !== 'active') return <span className="text-xs text-stone-400">—</span>;
             if (unpaidShares(e).length === 0) return <span className="inline-flex items-center gap-1 text-xs text-brand-700"><CheckCircle2 className="size-3.5" /> Paid</span>;
-            // Your share of a common bill your partner paid: send it from here.
+            // Your part of a common bill: pay it, or send it to your partner if they paid the whole bill.
             const bill = owingBill(e, user!.id);
-            if (bill) return <Button size="sm" onClick={() => setPaying(bill)}>Send my share</Button>;
+            if (bill) return <Button size="sm" onClick={() => setPaying(bill)}>{bill.payment?.paid ? 'Send my share' : 'Pay my share'}</Button>;
             return <span className="inline-flex items-center gap-1 text-xs text-rose-600"><Clock className="size-3.5" /> Pending</span>;
           }} />}
           {isCouple && <Column header="Who paid" body={(e: Expense) => {
@@ -180,7 +185,10 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
                 ))}
                 {unpaidShares(e).map((s) => (
                   <span key={s.userId} className="inline-flex items-center gap-1 text-rose-600">
-                    <Clock className="size-3" />{memberName(s.userId)} owes {memberName(e.paidBy)} <Money value={s.amount} />
+                    <Clock className="size-3" />
+                    {billOf(e) && !billOf(e)!.payment?.paid
+                      ? <>{memberName(s.userId)} to pay <Money value={s.open} /></>
+                      : <>{memberName(s.userId)} owes {memberName(e.paidBy)} <Money value={s.open} /></>}
                   </span>
                 ))}
               </div>

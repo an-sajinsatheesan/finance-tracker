@@ -5,7 +5,7 @@ import { expenseRepository } from '../repositories/expense.repository.js';
 import { commitmentRepository } from '../repositories/commitment.repository.js';
 import { assertMember, incomeByMember, memberIds } from './workspace.service.js';
 import { buildShares } from './expense.logic.js';
-import { splitWeights } from './commitment.logic.js';
+import { amountFor, splitWeights } from './commitment.logic.js';
 import { assertLookup } from './lookup.service.js';
 import { assertAccount } from './account.service.js';
 
@@ -106,6 +106,12 @@ export async function updateExpense(workspaceId: string, id: string, input: Part
   const c = doc.commitmentId ? await commitmentRepository.findById(workspaceId, String(doc.commitmentId)) : null;
   const opts = await shareOptions(workspaceId, members, c, { type: doc.type, month: doc.month, paidBy: String(doc.paidBy), ownerId });
   doc.set('shares', buildShares(doc.type, doc.amount, members, ownerId, opts));
+  if (c && input.amount !== undefined) {
+    // A bill payment whose amount changed: it settles the bill only if the payments now cover it
+    // (e.g. a full payment corrected to just one partner's share leaves the rest to pay).
+    const others = (await expenseRepository.listForCommitment(workspaceId, String(c._id), doc.month)).filter((x) => String(x._id) !== id);
+    doc.settlesCommitment = others.reduce((a, x) => a + x.amount, 0) + doc.amount >= amountFor(c, doc.month) - 0.005;
+  }
   await doc.save();
   return doc;
 }
