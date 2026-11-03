@@ -10,7 +10,7 @@ import {
 } from './commitment.logic.js';
 import { assertMonthStarted, createExpense } from './expense.service.js';
 import { assertAccount } from './account.service.js';
-import { Account, Contribution } from '../models/index.js';
+import { Account, Contract, Contribution } from '../models/index.js';
 
 type CreateInput = {
   title: string; category: string; customCategory: string; type: 'personal' | 'common';
@@ -239,7 +239,8 @@ export async function payCommitment(
     accountId: input.accountId,
     month: input.month,
     settlesCommitment: settles,
-    paidOut: input.paidOut,
+    // Rent paid by contract cheques: the monthly bill records the cost; the cheques move the money.
+    paidOut: (await Contract.exists({ workspaceId, status: 'active', commitmentId: id })) ? false : input.paidOut,
   });
 }
 

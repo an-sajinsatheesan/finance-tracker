@@ -139,3 +139,17 @@ export interface Balances {
   }[];
   unlinked: { expenses: { count: number; amount: number }; income: { count: number; amount: number } };
 }
+
+/** A cheque of a contract; it leaves the account only once cleared. */
+export interface Cheque { id: string; date: string; amount: number; cleared: boolean; clearedDate: string | null }
+/** Rent (or other) contract paid by cheques; `monthly` is what the linked commitment budgets. */
+export interface Contract {
+  id: string; name: string; type: Kind; ownerId: string | null; startDate: string; endDate: string; months: number;
+  totalAmount: number; monthly: number; commitmentId: string | null; accountId: string | null; cheques: Cheque[];
+  renewedFrom: string | null; notes: string; status: 'active' | 'archived';
+}
+/** Money held as a deposit (apartment, DEWA, gas…); it comes back when refunded. */
+export interface Deposit {
+  id: string; name: string; amount: number; type: Kind; ownerId: string | null; contractId: string | null;
+  paidDate: string | null; refundedDate: string | null; notes: string; status: 'active' | 'archived';
+}

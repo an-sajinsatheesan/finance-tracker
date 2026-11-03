@@ -3,7 +3,7 @@ import { badRequest, notFound } from '../utils/AppError.js';
 import { round2 } from '../utils/money.js';
 import { addMonths } from '../utils/month.js';
 import { ACCOUNT_GROUPS, type AccountGroup } from '../utils/lookups.js';
-import { Account, AccountBalance, Contribution, Expense, Income, Lookup, Transfer } from '../models/index.js';
+import { Account, AccountBalance, Contract, Contribution, Expense, Income, Lookup, Transfer } from '../models/index.js';
 import { assertMember, ensureMonthIncome, getWorkspace } from './workspace.service.js';
 import { assertLookup } from './lookup.service.js';
 import { balanceAt as latestBalance, computeWealth, type AccountRow, type BalanceRow } from './wealth.logic.js';
@@ -228,12 +228,18 @@ const isOpeningBalance = (b: { opening?: boolean | null; month: string }, opened
 async function loadLinkedMoney(workspaceId: string, accountIds: string[], month: string) {
   // Income for next month's budget can already be in the bank (paid at the end of this month),
   // and next month's bills can already be paid.
-  const [incomes, expenses, transfers, contributions] = await Promise.all([
+  const [incomes, expenses, transfers, contributions, contracts] = await Promise.all([
     Income.find({ workspaceId, month: { $lte: addMonths(month, 1) }, status: { $ne: 'archived' } }).lean(),
     Expense.find({ workspaceId, month: { $lte: addMonths(month, 1) }, status: 'active' }).lean(),
     Transfer.find({ workspaceId, status: 'active', month: { $lte: month } }).lean(),
     Contribution.find({ workspaceId, status: 'active', date: { $lte: `${month}-31` } }).lean(),
+    Contract.find({ workspaceId, status: 'active', accountId: { $in: accountIds } }).lean(),
   ]);
+  // Contract cheques (rent) leave their account on the day they clear.
+  const cheques = contracts.flatMap((c) => c.cheques
+    .filter((q) => q.cleared)
+    .map((q) => ({ month: (q.clearedDate ?? q.date).slice(0, 7), fromAccountId: String(c.accountId), toAccountId: '', amount: q.amount, toAmount: q.amount, fee: 0 })))
+    .filter((q) => q.month <= month);
   const idSet = new Set(accountIds);
   const linked = (id: unknown) => (id && idSet.has(String(id)) ? String(id) : null);
   return {
@@ -251,7 +257,8 @@ async function loadLinkedMoney(workspaceId: string, accountIds: string[], month:
       // A partner's share of a bill sent to the other (or a joint account) moves money on the day it was sent.
       .concat(contributions
         .filter((c) => linked(c.fromAccountId) || linked(c.toAccountId))
-        .map((c) => ({ month: c.date.slice(0, 7), fromAccountId: linked(c.fromAccountId) ?? '', toAccountId: linked(c.toAccountId) ?? '', amount: c.amount, toAmount: c.amount, fee: 0 }))),
+        .map((c) => ({ month: c.date.slice(0, 7), fromAccountId: linked(c.fromAccountId) ?? '', toAccountId: linked(c.toAccountId) ?? '', amount: c.amount, toAmount: c.amount, fee: 0 })))
+      .concat(cheques),
   };
 }
 

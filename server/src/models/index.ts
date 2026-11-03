@@ -9,3 +9,4 @@ export * from './Backup.js';
 export * from './Lookup.js';
 export * from './Account.js';
 export * from './Invitation.js';
+export * from './Contract.js';

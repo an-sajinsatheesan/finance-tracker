@@ -15,6 +15,7 @@ import * as backup from '../controllers/backup.controller.js';
 import * as lookups from '../controllers/lookup.controller.js';
 import * as accounts from '../controllers/account.controller.js';
 import * as reminders from '../controllers/reminder.controller.js';
+import * as contracts from '../controllers/contract.controller.js';
 
 export const router = Router();
 
@@ -82,6 +83,14 @@ router.get('/accounts', h(accounts.list));
 router.post('/accounts', body(v.accountCreateSchema), h(accounts.create));
 router.put('/accounts/:id', body(v.accountUpdateSchema), h(accounts.update));
 router.get('/accounts/:id/balances', h(accounts.history));
+router.get('/contracts', h(contracts.list));
+router.post('/contracts', body(v.contractCreateSchema), h(contracts.create));
+router.put('/contracts/:id', body(v.contractUpdateSchema), h(contracts.update));
+router.post('/contracts/:id/renew', body(v.contractRenewSchema), h(contracts.renew));
+router.post('/contracts/:id/archive', h(contracts.archive));
+router.put('/contracts/:id/cheques/:chequeId', body(v.chequeSchema), h(contracts.setCheque));
+router.post('/deposits', body(v.depositCreateSchema), h(contracts.createDeposit));
+router.put('/deposits/:id', body(v.depositUpdateSchema), h(contracts.updateDeposit));
 router.put('/account-balances', body(v.balancesSaveSchema), h(accounts.saveBalances));
 router.get('/transfers', query(v.monthQuery), h(accounts.listTransfers));
 router.post('/transfers', body(v.transferCreateSchema), h(accounts.createTransfer));

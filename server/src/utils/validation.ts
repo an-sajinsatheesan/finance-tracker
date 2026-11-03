@@ -274,3 +274,69 @@ export const wealthQuery = z.object({ month, scope: z.string().min(1).default('a
 
 export const monthQuery = z.object({ month });
 export const summaryQuery = z.object({ month, scope: z.string().min(1) });
+
+// ---------- Contracts (rent cheques) & deposits ----------
+
+const owner = { type: z.enum(['personal', 'common']), ownerId: objectId.optional().nullable() };
+const ownerNeeded = (v: { type?: string; ownerId?: string | null }) => v.type !== 'personal' || !!v.ownerId;
+
+export const contractCreateSchema = z
+  .object({
+    ...owner,
+    name: text(80).min(1),
+    startDate: date,
+    months: z.coerce.number().int().min(1).max(60),
+    totalAmount: positiveMoney,
+    chequeCount: z.coerce.number().int().min(1).max(60),
+    commitmentId: objectId.optional().nullable(),
+    accountId: objectId.optional().nullable(),
+    notes: text(500).default(''),
+    chequesPaid: z.coerce.number().int().min(0).max(60).optional(),
+  })
+  .refine(ownerNeeded, { message: 'Personal contracts need an owner', path: ['ownerId'] });
+
+export const contractUpdateSchema = z.object({
+  type: owner.type.optional(),
+  ownerId: owner.ownerId,
+  name: text(80).min(1).optional(),
+  startDate: date.optional(),
+  months: z.coerce.number().int().min(1).max(60).optional(),
+  totalAmount: positiveMoney.optional(),
+  chequeCount: z.coerce.number().int().min(1).max(60).optional(),
+  commitmentId: objectId.optional().nullable(),
+  accountId: objectId.optional().nullable(),
+  notes: text(500).optional(),
+});
+
+export const contractRenewSchema = z.object({
+  totalAmount: positiveMoney,
+  chequeCount: z.coerce.number().int().min(1).max(60),
+  months: z.coerce.number().int().min(1).max(60).optional(),
+  startDate: date.optional(),
+});
+
+export const chequeSchema = z.object({ cleared: z.boolean(), clearedDate: date.optional().nullable() });
+
+export const depositCreateSchema = z
+  .object({
+    ...owner,
+    name: text(80).min(1),
+    amount: positiveMoney,
+    contractId: objectId.optional().nullable(),
+    paidDate: date.optional().nullable(),
+    refundedDate: date.optional().nullable(),
+    notes: text(500).default(''),
+  })
+  .refine(ownerNeeded, { message: 'Personal deposits need an owner', path: ['ownerId'] });
+
+export const depositUpdateSchema = z.object({
+  type: owner.type.optional(),
+  ownerId: owner.ownerId,
+  name: text(80).min(1).optional(),
+  amount: positiveMoney.optional(),
+  contractId: objectId.optional().nullable(),
+  paidDate: date.optional().nullable(),
+  refundedDate: date.optional().nullable(),
+  notes: text(500).optional(),
+  archived: z.boolean().optional(),
+});
