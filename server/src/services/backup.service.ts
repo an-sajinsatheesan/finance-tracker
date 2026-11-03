@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppError, badRequest, notFound } from '../utils/AppError.js';
 import { round2, sum } from '../utils/money.js';
 import {
-  Account, AccountBalance, Backup, Commitment, Contract, Contribution, Deposit, Expense, GoldItem, GoldPrice, Goal, GoalAllocation, Income, IncomeMonth, Lookup, Transfer, User, Workspace,
+  Account, AccountBalance, Backup, Commitment, Contract, Contribution, Deposit, Expense, GoldItem, GoldPrice, LoanEntry, Goal, GoalAllocation, Income, IncomeMonth, Lookup, Transfer, User, Workspace,
 } from '../models/index.js';
 
 export const BACKUP_APP = 'couple-finance-tracker';
@@ -27,6 +27,7 @@ const COLLECTIONS = {
   deposits: Deposit,
   goldItems: GoldItem,
   goldPrices: GoldPrice,
+  loanEntries: LoanEntry, // loan statement lines
 } as const satisfies Record<string, Model<any>>;
 type CollectionKey = keyof typeof COLLECTIONS;
 
@@ -104,6 +105,7 @@ const backupSchema = z.object({
     deposits: z.array(base.extend({ name: z.string(), amount: num })).default([]),
     goldItems: z.array(base.extend({ name: z.string(), grams: num })).default([]),
     goldPrices: z.array(base.extend({ currency: z.string() })).default([]),
+    loanEntries: z.array(base.extend({ accountId: oid, date: dateStr, kind: z.string() })).default([]),
   }),
 });
 export type BackupFile = z.infer<typeof backupSchema>;

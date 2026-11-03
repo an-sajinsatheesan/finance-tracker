@@ -11,3 +11,4 @@ export * from './Account.js';
 export * from './Invitation.js';
 export * from './Contract.js';
 export * from './Gold.js';
+export * from './LoanEntry.js';

@@ -15,6 +15,7 @@ import {
 } from '../components/ui';
 import { AddLookupModal, AddValueButton, LookupSelect } from '../components/forms';
 import { GoldSection } from './Gold';
+import { LoanLedger } from './LoanLedger';
 
 export const GROUP_LABEL: Record<AccountGroup, string> = { cash: 'Savings & cash', deposit: 'Deposits', investment: 'Investments', liability: 'Loans & cards' };
 
@@ -443,15 +444,16 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
   const all = everything.filter((a) => S.groups.includes(a.group));
   const inCurrency = all.filter((a) => a.currency === tab);
   // Investments: one tab per type (stocks, mutual funds, gold…); the gold tab always shows.
-  const [kind, setKind] = useState<string>('all');
-  const kinds = section === 'investments' ? [...new Set([...inCurrency.map((a) => a.accountType), 'gold'])] : [];
+  const [kind, setKind] = useState<string>(section === 'loans' ? 'home_loan' : 'all');
+  const kinds = section === 'investments' ? [...new Set([...inCurrency.map((a) => a.accountType), 'gold'])]
+    : section === 'loans' ? [...new Set(['home_loan', 'car_loan', 'personal_loan', 'credit_card', ...inCurrency.map((a) => a.accountType)])] : [];
   const kindLabel = (k: string) => (k === 'all' ? 'All' : label('accountType', k));
   const rows = inCurrency.filter((a) => (group === 'all' || a.group === group) && (kind === 'all' || a.accountType === kind));
   const stale = inCurrency.filter((a) => !a.recordedThisMonth).length;
   const isTransfers = tab === 'transfers';
 
   return (
-    <Page fill={section !== "investments"}>
+    <Page fill={section === "bank"}>
       <PageHeader
         title={S.title}
         subtitle={`${S.subtitle} · end of ${monthLabel(month)}`}
@@ -467,10 +469,10 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
           onChange={setTab}
           items={[...currencies.map((c) => ({ value: c, label: c === 'AED' ? 'AED · UAE' : c === 'INR' ? 'INR · India' : c, count: all.filter((a) => a.currency === c).length })), ...(section === 'bank' ? [{ value: 'transfers', label: 'Transfers' }] : [])]}
         />
-        {!isTransfers && section === 'investments' && (
+        {!isTransfers && kinds.length > 0 && (
           <Tabs<string> value={kind} onChange={setKind} items={['all', ...kinds].map((k) => ({ value: k, label: kindLabel(k), count: k === 'all' ? inCurrency.length : inCurrency.filter((a) => a.accountType === k).length }))} />
         )}
-        {!isTransfers && section !== 'investments' && groupTabs.length > 0 && (
+        {!isTransfers && kinds.length === 0 && groupTabs.length > 0 && (
           <Tabs<AccountGroup | 'all'> value={group} onChange={setGroup} items={groupTabs.map((g) => ({ value: g, label: g === 'all' ? 'All' : GROUP_LABEL[g] }))} />
         )}
       </div>
@@ -551,9 +553,12 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
           </TableCard>
           <p className="mt-2 shrink-0 text-[11px] text-stone-500">Change for loans and cards shows the effect on net worth (paying down a loan is positive). Gain = current value − amount invested.</p>
           {section === 'investments' && kind === 'gold' && <div className="mt-4"><GoldSection currency={tab} accounts={everything} onChanged={reload} /></div>}
-          {section === 'loans' && (
+          {section === 'loans' && rows.filter((a) => a.accountType !== 'credit_card').map((a) => (
+            <div key={a.id} className="mt-4"><LoanLedger account={a} onChanged={reload} /></div>
+          ))}
+          {section === 'loans' && !rows.some((a) => a.accountType !== 'credit_card') && kind !== 'credit_card' && (
             <p className="mt-3 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600">
-              Add a housing loan as a <b>Loan</b> with the amount outstanding and update it each month. EMI schedule, interest and payoff tracking for the housing loan will come here later.
+              Add a {kind === 'all' ? 'home or car loan' : kindLabel(kind).toLowerCase()} with the Add button above, then add its statement rows here each month: interest, EMIs and prepayments.
             </p>
           )}
         </>

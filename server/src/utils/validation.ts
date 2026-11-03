@@ -376,3 +376,17 @@ export const goldPriceSchema = z.object({
   perGram24: perGram, perGram22: perGram, perGram18: perGram,
   date: date.optional().nullable(),
 });
+
+// ---------- Loan statement lines ----------
+
+export const loanEntrySchema = z.object({
+  date,
+  kind: z.enum(['disbursement', 'charge', 'interest', 'repayment', 'prepayment', 'rate', 'adjustment']),
+  details: text(200).default(''),
+  ref: text(80).default(''),
+  amount: z.coerce.number().finite().min(-100_000_000).max(100_000_000).optional(),
+  rate: z.coerce.number().finite().gt(0).max(100).optional().nullable(),
+  statementBalance: z.coerce.number().finite().min(-100_000_000).max(1_000_000_000).optional().nullable(),
+  notes: text(300).default(''),
+});
+export const loanEntriesSchema = z.object({ entries: z.array(loanEntrySchema).min(1).max(1000) });
