@@ -48,5 +48,8 @@ export const env = {
   /** Shared secret for the scheduled reminder endpoint (Vercel Cron sends it as a Bearer token). */
   get cronSecret() { return process.env.CRON_SECRET ?? ''; },
   get allowRegistration() { return process.env.ALLOW_REGISTRATION !== 'false'; },
+  /** Admin panel sign-in (user control). Without ADMIN_PASSWORD the admin panel is switched off. */
+  get adminUsername() { return (process.env.ADMIN_USERNAME ?? 'admin').toLowerCase(); },
+  get adminPassword() { return process.env.ADMIN_PASSWORD ?? ''; },
   get backupDir() { return process.env.BACKUP_DIR ?? path.resolve(process.cwd(), 'backups'); },
 };

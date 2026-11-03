@@ -109,3 +109,24 @@ export async function register(input: RegisterInput) {
 
   return { token: signToken(String(owner._id), String(workspaceId)), user: publicUser(owner), invite };
 }
+
+/** Your own name and login email. The email must not belong to another account. */
+export async function updateProfile(userId: string, input: { email?: string; displayName?: string }) {
+  const user = await User.findById(userId);
+  if (!user) throw new AppError(401, 'Account not available');
+  if (input.email) {
+    const email = input.email.toLowerCase().trim();
+    if (email !== user.email) {
+      if (await User.exists({ _id: { $ne: user._id }, $or: [{ email }, { username: email }] })) throw new AppError(409, `An account with ${email} already exists`);
+      // Accounts that sign in with their email keep doing so with the new one.
+      if (!user.username || user.username === user.email || user.username.includes('@')) user.username = email;
+      user.email = email;
+    }
+  }
+  if (input.displayName?.trim() && input.displayName.trim() !== user.displayName) {
+    user.displayName = input.displayName.trim();
+    await Workspace.updateOne({ _id: user.workspaceId, 'members.userId': user._id }, { $set: { 'members.$.displayName': user.displayName } });
+  }
+  await user.save();
+  return publicUser(user);
+}

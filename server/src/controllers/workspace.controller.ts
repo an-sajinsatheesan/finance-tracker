@@ -23,3 +23,7 @@ export async function resendInvitation(req: Request, res: Response) {
   const u = authUser(req);
   res.json(await invites.resendInvitation(u.workspaceId, u.id, req.params.id));
 }
+export async function reinviteMember(req: Request, res: Response) {
+  const u = authUser(req);
+  res.json(await invites.reinviteMember(u.workspaceId, u.id, req.params.userId, req.body.email));
+}

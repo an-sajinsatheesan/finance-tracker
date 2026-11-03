@@ -26,3 +26,8 @@ export async function describeInvite(req: Request, res: Response) {
 export async function acceptInvite(req: Request, res: Response) {
   res.json(await invites.acceptInvite(req.params.token, req.body));
 }
+export async function updateProfile(req: Request, res: Response) {
+  const u = authUser(req);
+  const user = await auth.updateProfile(u.id, req.body);
+  res.json({ user, workspace: await getWorkspaceView(u.workspaceId) });
+}

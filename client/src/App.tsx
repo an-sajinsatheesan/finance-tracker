@@ -16,9 +16,12 @@ import Accounts from './pages/Accounts';
 import WealthPage from './pages/Wealth';
 import BalancesPage from './pages/Balances';
 import SettingsPage from './pages/Settings';
+import Admin from './pages/Admin';
 
 export default function App() {
   const { user, workspace, loading } = useAuth();
+  // The admin panel has its own sign-in and works whether or not someone is signed in to the app.
+  if (['/admin', '/admin/'].includes(location.pathname)) return <Admin />;
   if (loading) return <ShellSkeleton />;
   if (!user || !workspace) {
     return (

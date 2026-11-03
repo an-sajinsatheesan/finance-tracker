@@ -137,3 +137,22 @@ export async function resendInvitation(workspaceId: string, invitedBy: string, i
   if (!inv) throw notFound('Invitation');
   return createInvitation({ workspaceId, userId: String(inv.userId), email: inv.email, invitedBy });
 }
+
+/**
+ * Invite a member again, also one who already joined (e.g. a new email, or to set a new
+ * password). The link goes to `email` (or their current email); accepting it makes that
+ * their login email and sets their password.
+ */
+export async function reinviteMember(workspaceId: string, invitedBy: string, userId: string, email?: string | null) {
+  if (userId === invitedBy) throw badRequest('Change your own email in your profile instead');
+  const user = await User.findOne({ _id: userId, workspaceId }).lean();
+  if (!user) throw notFound('Member');
+  if (user.status === 'disabled') throw badRequest('This member is disabled');
+  const to = (email ?? user.email ?? '').toLowerCase().trim();
+  if (!to) throw badRequest('Enter the email to send the invitation to');
+  const taken = await User.findOne({ _id: { $ne: user._id }, $or: [{ email: to }, { username: to }] }).lean();
+  if (taken) throw new AppError(409, `An account with ${to} already exists`);
+  // Someone who hasn't joined yet signs in with the new email straight away.
+  if (user.status === 'invited') await User.updateOne({ _id: user._id }, { $set: { email: to, username: to } });
+  return createInvitation({ workspaceId, userId, email: to, invitedBy });
+}

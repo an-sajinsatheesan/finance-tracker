@@ -40,6 +40,38 @@ function InviteLink({ invite }: { invite: InviteResult }) {
   );
 }
 
+/** Your own name and sign-in email. */
+function ProfilePanel() {
+  const { user, refreshWorkspace } = useAuth();
+  const toast = useToast();
+  const [f, setF] = useState({ displayName: user?.displayName ?? '', email: user?.email ?? '' });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const dirty = f.displayName.trim() !== (user?.displayName ?? '') || f.email.trim().toLowerCase() !== (user?.email ?? '');
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      await api.put('/auth/me', { displayName: f.displayName.trim(), email: f.email.trim() });
+      await refreshWorkspace();
+      toast.success('Profile saved');
+    } catch (err) { setError(errorText(err)); } finally { setBusy(false); }
+  }
+  return (
+    <section className="card p-4">
+      <h2 className="mb-1 text-sm font-semibold text-stone-800">Your profile</h2>
+      <p className="mb-3 text-xs text-stone-500">Your name in the app and the email you sign in with.</p>
+      <form onSubmit={save} className="flex flex-wrap items-end gap-3">
+        <Field label="Name" className="min-w-48 flex-1"><TextInput value={f.displayName} onChange={(v) => setF({ ...f, displayName: v })} required maxLength={50} /></Field>
+        <Field label="Email (sign-in)" className="min-w-64 flex-1"><TextInput type="email" value={f.email} onChange={(v) => setF({ ...f, email: v })} required /></Field>
+        <Button type="submit" variant="primary" loading={busy} disabled={!dirty}>Save</Button>
+      </form>
+      {f.email.trim().toLowerCase() !== (user?.email ?? '') && <p className="mt-2 text-[11px] text-amber-700">After saving, sign in with the new email next time.</p>}
+      <ErrorNote message={error} />
+    </section>
+  );
+}
+
 /** Members, their status and the partner invitation. */
 function MembersPanel() {
   const { workspace, user, refreshWorkspace } = useAuth();
@@ -49,6 +81,21 @@ function MembersPanel() {
   const [result, setResult] = useState<InviteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // "Invite again": a new link to the partner (to a corrected email, or to set a new password).
+  const [reinvite, setReinvite] = useState<{ userId: string; name: string; email: string } | null>(null);
+  async function sendReinvite(e: FormEvent) {
+    e.preventDefault();
+    if (!reinvite) return;
+    setBusy('reinvite'); setError(null);
+    try {
+      const r = await api.post<InviteResult>(`/workspace/members/${reinvite.userId}/reinvite`, { email: reinvite.email });
+      setResult(r);
+      setReinvite(null);
+      toast.success(r.sent ? `Invitation emailed to ${r.email}` : 'Invitation created — copy the link below', 'Invitation');
+      invites.reload();
+      await refreshWorkspace();
+    } catch (err) { setError(errorText(err)); } finally { setBusy(null); }
+  }
   const pendingMember = workspace?.members.find((m) => m.status === 'invited');
   const canInvite = (workspace?.members.length ?? 0) < 2 || !!pendingMember;
   useEffect(() => { if (pendingMember?.email) setForm((f) => ({ ...f, email: pendingMember.email ?? '' })); }, [pendingMember?.email]);
@@ -90,7 +137,14 @@ function MembersPanel() {
               <div className="text-sm font-medium">{m.displayName}{m.userId === user?.id && <span className="ml-1 text-xs font-normal text-stone-400">(you)</span>}</div>
               <div className="truncate text-[11px] text-stone-500">{m.relationship}{m.email && ` · ${m.email}`}</div>
             </div>
-            {m.status === 'invited' ? <Badge tone="amber">Invitation pending</Badge> : <Badge tone="brand">Active</Badge>}
+            <div className="flex shrink-0 items-center gap-2">
+              {m.status === 'invited' ? <Badge tone="amber">Invitation pending</Badge> : <Badge tone="brand">Active</Badge>}
+              {m.userId !== user?.id && (
+                <Button size="sm" variant="ghost" onClick={() => { setReinvite({ userId: m.userId, name: m.displayName, email: m.email ?? '' }); setResult(null); }} icon={<Send className="size-3" />}>
+                  Invite again
+                </Button>
+              )}
+            </div>
           </li>
         ))}
       </ul>
@@ -114,6 +168,21 @@ function MembersPanel() {
       <div className="mt-2 space-y-2">
         <ErrorNote message={error} />
         {result && <InviteLink invite={result} />}
+      {reinvite && (
+        <form onSubmit={sendReinvite} className="mt-3 space-y-2 rounded-xl border border-brand-100 bg-brand-50/40 p-3">
+          <p className="text-xs text-stone-600">
+            Send <b>{reinvite.name}</b> a new invitation link. They choose a password there, and the email below becomes their login.
+            Any earlier link stops working.
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <Field label={`${reinvite.name}'s email`} className="min-w-64 flex-1">
+              <TextInput type="email" value={reinvite.email} onChange={(v) => setReinvite({ ...reinvite, email: v })} required />
+            </Field>
+            <Button onClick={() => setReinvite(null)}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={busy === 'reinvite'} icon={<Send className="size-3.5" />}>Send invitation</Button>
+          </div>
+        </form>
+      )}
       </div>
     </section>
   );
@@ -319,6 +388,7 @@ export default function SettingsPage() {
     <Page>
       <div className="space-y-4">
       <PageHeader title="Settings" subtitle={`${workspace?.name} · signed in as ${user?.email ?? '@' + user?.username}`} />
+      <ProfilePanel />
       <MembersPanel />
       <ListsPanel />
       <BackupPanel />

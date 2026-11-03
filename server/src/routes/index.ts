@@ -18,6 +18,8 @@ import * as reminders from '../controllers/reminder.controller.js';
 import * as contracts from '../controllers/contract.controller.js';
 import * as gold from '../controllers/gold.controller.js';
 import * as loans from '../controllers/loan.controller.js';
+import * as admin from '../controllers/admin.controller.js';
+import { requireAdmin } from '../middleware/admin.js';
 
 export const router = Router();
 
@@ -31,10 +33,17 @@ router.post('/invitations/:token/accept', rateLimit(10, 10 * 60 * 1000), body(v.
 router.get('/cron/reminders', h(reminders.cron));
 router.post('/cron/reminders', h(reminders.cron));
 
+// Admin panel (user control): its own sign-in from ADMIN_USERNAME / ADMIN_PASSWORD.
+router.post('/admin/login', rateLimit(10, 10 * 60 * 1000), body(v.adminLoginSchema), h(admin.login));
+router.get('/admin/users', requireAdmin, h(admin.users));
+router.put('/admin/users/:id', requireAdmin, body(v.adminUserUpdateSchema), h(admin.updateUser));
+router.post('/admin/users/:id/password-link', requireAdmin, h(admin.passwordLink));
+
 // Everything below requires a valid JWT; all data access is scoped to the user's workspace.
 router.use(requireAuth);
 
 router.get('/auth/me', h(auth.me));
+router.put('/auth/me', body(v.profileUpdateSchema), h(auth.updateProfile));
 
 router.get('/workspace', h(workspace.get));
 router.put('/workspace', body(v.workspaceUpdateSchema), h(workspace.update));
@@ -42,6 +51,7 @@ router.post('/workspace/setup/complete', body(v.completeSetupSchema), h(workspac
 router.get('/workspace/invitations', h(workspace.listInvitations));
 router.post('/workspace/invitations', body(v.invitePartnerSchema), h(workspace.invitePartner));
 router.post('/workspace/invitations/:id/resend', h(workspace.resendInvitation));
+router.post('/workspace/members/:userId/reinvite', body(v.reinviteSchema), h(workspace.reinviteMember));
 
 router.get('/lookups', h(lookups.list));
 router.post('/lookups', body(v.lookupCreateSchema), h(lookups.create));

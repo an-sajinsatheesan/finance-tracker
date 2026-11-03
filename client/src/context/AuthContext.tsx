@@ -83,8 +83,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await startSession(r.token);
   }, [startSession]);
 
+  // Reloads you and the workspace (after changing your email or name, members, rates…).
   const refreshWorkspace = useCallback(async () => {
-    setWorkspace(await api.get<Workspace>('/workspace'));
+    const me = await api.get<{ user: AuthUser; workspace: Workspace }>('/auth/me');
+    setUser(me.user);
+    setWorkspace(me.workspace);
   }, []);
 
   const memberName = useCallback(

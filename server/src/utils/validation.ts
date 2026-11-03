@@ -390,3 +390,17 @@ export const loanEntrySchema = z.object({
   notes: text(300).default(''),
 });
 export const loanEntriesSchema = z.object({ entries: z.array(loanEntrySchema).min(1).max(1000) });
+
+// ---------- Profile, re-invite and admin ----------
+
+export const profileUpdateSchema = z.object({
+  email: z.string().trim().email().max(254).optional(),
+  displayName: text(50).min(1).optional(),
+});
+export const reinviteSchema = z.object({ email: z.string().trim().email().max(254).optional().nullable() });
+export const adminLoginSchema = z.object({ username: z.string().trim().min(1).max(100), password: z.string().min(1).max(200) });
+export const adminUserUpdateSchema = z.object({
+  status: z.enum(['active', 'disabled']).optional(),
+  email: z.string().trim().email().max(254).optional(),
+  displayName: text(50).min(1).optional(),
+});
