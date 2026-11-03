@@ -32,12 +32,14 @@ async function syncBalances(workspaceId: string, accountId: string) {
   const ends = monthEnds(rows);
   const months = [...ends.keys()].filter((m) => m >= a.openedMonth);
   await AccountBalance.deleteMany({ workspaceId, accountId, note: NOTE, month: { $nin: months } });
-  for (const m of months) {
-    await AccountBalance.updateOne(
-      { workspaceId, accountId, month: m },
-      { $set: { balance: ends.get(m)!, opening: false, note: NOTE } },
-      { upsert: true },
-    );
+  if (months.length) {
+    await AccountBalance.bulkWrite(months.map((m) => ({
+      updateOne: {
+        filter: { workspaceId, accountId, month: m },
+        update: { $set: { balance: ends.get(m)!, opening: false, note: NOTE } },
+        upsert: true,
+      },
+    })));
   }
 }
 
