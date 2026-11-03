@@ -449,6 +449,8 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
     : section === 'loans' ? [...new Set(['home_loan', 'car_loan', 'personal_loan', 'credit_card', ...inCurrency.map((a) => a.accountType)])] : [];
   const kindLabel = (k: string) => (k === 'all' ? 'All' : label('accountType', k));
   const rows = inCurrency.filter((a) => (group === 'all' || a.group === group) && (kind === 'all' || a.accountType === kind));
+  // A loan tab with loans: just each loan's own cards and statement (no list or second set of cards).
+  const loanView = section === 'loans' && kind !== 'all' && kind !== 'credit_card' && rows.length > 0;
   const stale = inCurrency.filter((a) => !a.recordedThisMonth).length;
   const isTransfers = tab === 'transfers';
 
@@ -482,7 +484,7 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
         <TransfersTab accounts={everything} month={month} tick={transferTick} />
       ) : (
         <>
-          {rows.length > 0 && (() => {
+          {!loanView && rows.length > 0 && (() => {
             const now = rows.reduce((s, a) => s + (a.current ?? 0), 0);
             const before = rows.reduce((s, a) => s + (a.previous ?? 0), 0);
             const n = `${rows.length} ${kind === 'all' ? S.noun : kindLabel(kind).toLowerCase()}${rows.length === 1 || kind !== 'all' ? '' : 's'}`;
@@ -510,12 +512,13 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
               { label: 'Change vs last month', value: now - before, currency: tab, tone: now - before < 0 ? 'text-rose-700' : 'text-emerald-700', icon: <ArrowRight className="size-3.5" />, sub: `${monthLabel(addMonths(month, -1), 'short')}: ${moneyIn(before, tab)}` },
             ]} />;
           })()}
-          {stale > 0 && inCurrency.length > 0 && (
+          {!loanView && stale > 0 && inCurrency.length > 0 && (
             <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               {stale} of {inCurrency.length} {tab} account{inCurrency.length > 1 ? 's' : ''} without an entered balance for {monthLabel(month)}: showing the calculated balance (last entered balance + linked income − expenses).{' '}
               <button className="font-medium underline" onClick={() => setModal('balances')}>Update now</button>
             </div>
           )}
+          {!loanView && (<>
           <TableCard>
             <DataTable
               value={rows}
@@ -552,9 +555,10 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
             </DataTable>
           </TableCard>
           <p className="mt-2 shrink-0 text-[11px] text-stone-500">Change for loans and cards shows the effect on net worth (paying down a loan is positive). Gain = current value − amount invested.</p>
+          </>)}
           {section === 'investments' && kind === 'gold' && <div className="mt-4"><GoldSection currency={tab} accounts={everything} onChanged={reload} /></div>}
-          {section === 'loans' && rows.filter((a) => a.accountType !== 'credit_card').map((a) => (
-            <div key={a.id} className="mt-4"><LoanLedger account={a} onChanged={reload} /></div>
+          {loanView && rows.map((a) => (
+            <div key={a.id} className="mt-1"><LoanLedger account={a} onChanged={reload} onEdit={() => setEditing(a)} /></div>
           ))}
           {section === 'loans' && !rows.some((a) => a.accountType !== 'credit_card') && kind !== 'credit_card' && (
             <p className="mt-3 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600">
