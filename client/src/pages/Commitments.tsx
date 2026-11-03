@@ -9,7 +9,7 @@ import { api, errorText } from '../lib/api';
 import type { Commitment } from '../lib/types';
 import { addMonths, categoryLabel, money, monthLabel, thisMonth } from '../lib/format';
 import {
-  Button, Empty, cx, ErrorNote, Field, IconButton, Modal, Money, MonthInput, Page, PageHeader, TableCard, TableSkeleton, Tabs, TypeBadge, confirmAction, usePaging, useToast,
+  Button, Empty, cx, ErrorNote, StatRail, Field, IconButton, Modal, Money, MonthInput, Page, PageHeader, TableCard, TableSkeleton, Tabs, TypeBadge, confirmAction, usePaging, useToast,
 } from '../components/ui';
 import { CommitmentForm, PayCommitmentModal, WhoPaid, payLabel, standing } from '../components/forms';
 import { SPLIT_LABEL } from '../lib/split';
@@ -86,6 +86,20 @@ export default function Commitments() {
           ]} />
         )}
       </div>
+      {(() => {
+        const due = all.filter((c) => inMonth(c) && forWho(c));
+        const planned = due.reduce((a, c) => a + amountIn(c), 0);
+        const paid = due.reduce((a, c) => a + (c.payment?.paid ? amountIn(c) : c.payment?.paidAmount ?? 0), 0);
+        const open = due.filter((c) => !c.payment?.paid);
+        return (
+          <StatRail items={[
+            { label: `Planned · ${monthLabel(month, 'short')}`, value: planned, icon: <ReceiptText className="size-3.5" />, sub: `${due.length} commitment${due.length === 1 ? '' : 's'}` },
+            { label: 'Paid', value: paid, tone: 'text-emerald-700', icon: <CheckCircle2 className="size-3.5" />, sub: `${due.length - open.length} done` },
+            { label: 'Still to pay', value: planned - paid, tone: planned - paid > 0.004 ? 'text-amber-700' : 'text-emerald-700', icon: <Clock className="size-3.5" />, sub: `${open.length} open` },
+            { label: 'Common', value: due.filter((c) => c.type === 'common').reduce((a, c) => a + amountIn(c), 0), tone: 'text-violet-700', icon: <ArrowRight className="size-3.5" />, sub: 'Shared bills this month' },
+          ]} />
+        );
+      })()}
       <ErrorNote message={list.error} />
       <TableCard>
         <DataTable

@@ -214,7 +214,7 @@ export default function BalancesPage() {
               <Column header="Money out" headerTooltip="Expenses and bills paid from it, transfers moved out (bills not yet paid to the provider stay in)" align="right" footer={<span className="num text-rose-700">−{moneyIn(cashTotals.out, cur)}</span>} body={(a: BalanceAccount) => a.moneyOut ? <span className="num text-rose-700">−{moneyIn(a.moneyOut, a.currency)}</span> : <span className="text-stone-300">—</span>} />
               <Column header={`End of ${monthLabel(month, 'short')}`} align="right" footer={<span className="num font-semibold">{moneyIn(cashTotals.closing, cur)}</span>} body={(a: BalanceAccount) => (
                 <div>
-                  <span className={cx('num font-semibold', a.closing < 0 && 'text-rose-700')}>{moneyIn(a.closing, a.currency)}</span>
+                  <span className={cx('num font-semibold', a.group === 'liability' ? (a.closing > 0 ? 'text-amber-700' : 'text-stone-500') : a.closing < 0 ? 'text-rose-700' : a.closing > 0 ? 'text-emerald-700' : 'text-stone-500')}>{moneyIn(a.closing, a.currency)}</span>
                   <div className="text-[10px] text-stone-400">{a.group === 'liability' ? 'owed · ' : ''}{a.recorded ? 'recorded' : 'calculated'}</div>
                 </div>
               )} />

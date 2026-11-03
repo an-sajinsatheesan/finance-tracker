@@ -177,6 +177,7 @@ export default function CommonBills() {
             const q = chequeIn(k);
             if (k && q && !q.cleared) return <Button size="sm" variant="primary" onClick={() => setClearing({ c: k, q })}>Cheque cleared</Button>;
             if (k && !r.c.payment?.paid) return <Button size="sm" onClick={() => setPaying(r.c)}>Record share</Button>;
+            if (k && q?.cleared) return <IconButton title="Mark the cheque as not cleared" onClick={() => api.put(`/contracts/${k.id}/cheques/${q.id}`, { cleared: false }).then(() => { toast.success('Cheque marked as not cleared'); reload(); }, (err) => toast.error(errorText(err)))}><RotateCcw className="size-3.5" /></IconButton>;
             if (k) return null;
             if (r.pending.length > 0) return <Button size="sm" variant="primary" onClick={() => { setMarking(r); setDate(todayStr()); }}>Mark paid</Button>;
             if (!r.c.payment?.paid) return <Button size="sm" onClick={() => setPaying(r.c)}>{r.payments.length ? 'Record rest' : 'Record bill'}</Button>;

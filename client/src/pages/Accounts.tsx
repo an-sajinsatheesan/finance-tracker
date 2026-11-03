@@ -10,7 +10,7 @@ import { api, errorText } from '../lib/api';
 import type { Account, AccountGroup, Kind, Transfer, Wealth, WealthAccount } from '../lib/types';
 import { addMonths, dateLabel, monthLabel, moneyIn, todayStr } from '../lib/format';
 import {
-  Badge, Button, DateInput, Empty, ErrorNote, Field, IconButton, Modal, MonthInput, NumberInput, Page, PageHeader, Select, TableCard, TableSkeleton, Tabs, TextInput, usePaging,
+  Badge, Button, DateInput, Empty, ErrorNote, Field, IconButton, Modal, MonthInput, NumberInput, Page, PageHeader, Select, StatRail, TableCard, TableSkeleton, Tabs, TextInput, usePaging,
   confirmAction, cx, useToast, type Option,
 } from '../components/ui';
 import { AddLookupModal, AddValueButton, LookupSelect } from '../components/forms';
@@ -447,6 +447,14 @@ export default function Accounts() {
         <TransfersTab accounts={all} month={month} tick={transferTick} />
       ) : (
         <>
+          {totals && (
+            <StatRail items={[
+              { label: `Net ${tab}`, value: totals.net, currency: tab, icon: <CreditCard className="size-3.5" />, sub: `${inCurrency.length} account${inCurrency.length === 1 ? '' : 's'} · end of ${monthLabel(month, 'short')}` },
+              { label: 'Assets', value: totals.assets, currency: tab, tone: 'text-emerald-700', icon: <Plus className="size-3.5" />, sub: 'Bank, deposits and investments' },
+              { label: 'Loans & cards', value: totals.liabilities, currency: tab, tone: totals.liabilities > 0 ? 'text-rose-700' : 'text-stone-900', icon: <Archive className="size-3.5" />, sub: 'Outstanding' },
+              { label: 'Change vs last month', value: totals.change, currency: tab, tone: totals.change < 0 ? 'text-rose-700' : 'text-emerald-700', icon: <ArrowRight className="size-3.5" />, sub: `${monthLabel(addMonths(month, -1), 'short')}: ${moneyIn(totals.previousNet, tab)}` },
+            ]} />
+          )}
           {stale > 0 && inCurrency.length > 0 && (
             <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               {stale} of {inCurrency.length} {tab} account{inCurrency.length > 1 ? 's' : ''} without an entered balance for {monthLabel(month)}: showing the calculated balance (last entered balance + linked income − expenses).{' '}

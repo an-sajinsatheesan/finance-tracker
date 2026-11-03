@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Archive, CalendarClock, CheckCircle2, Clock, FileText, Pencil, PiggyBank, Plus, RefreshCw, RotateCcw, Undo2 } from 'lucide-react';
@@ -194,6 +194,8 @@ function DepositForm({ initial, contracts, onClose, onSaved }: { initial?: Depos
 export function ChequeModal({ contract, cheque, onClose, onSaved }: { contract: Contract | null; cheque: Cheque | null; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [date, setDate] = useState(todayStr());
+  // Opens on the cheque's own date (or today, if that is still ahead).
+  useEffect(() => { if (cheque) setDate(cheque.date < todayStr() ? cheque.date : todayStr()); }, [cheque]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function submit(e: FormEvent) {

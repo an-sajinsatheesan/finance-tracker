@@ -10,7 +10,7 @@ import { api, errorText } from '../lib/api';
 import type { Account, Commitment, Expense } from '../lib/types';
 import { categoryLabel, dateLabel, monthLabel, thisMonth } from '../lib/format';
 import {
-  Badge, Button, Check, Empty, ErrorNote, IconButton, Modal, Money, Page, PageHeader, TableCard, usePaging, TableSkeleton, Tabs, TypeBadge, confirmAction, useToast,
+  Badge, Button, Check, Empty, ErrorNote, IconButton, Modal, Money, Page, PageHeader, StatRail, TableCard, usePaging, TableSkeleton, Tabs, TypeBadge, confirmAction, useToast,
 } from '../components/ui';
 import { ExpenseForm, PayCommitmentModal, standing } from '../components/forms';
 import { CategoryIcon } from '../components/CategoryIcon';
@@ -111,6 +111,12 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
         )}
         <span className="ml-auto"><Check checked={showArchived} onChange={setShowArchived} label="Show archived" /></span>
       </div>
+      <StatRail items={[
+        { label: 'Total spent', value: total, icon: <ArrowLeftRight className="size-3.5" />, sub: `${active.length} expense${active.length === 1 ? '' : 's'} · ${monthLabel(month)}` },
+        ...(isCouple ? [{ label: whoLabel, value: whoTotal, tone: 'text-brand-700', icon: <CheckCircle2 className="size-3.5" />, sub: 'Own expenses + share of common' }] : []),
+        { label: 'Personal', value: active.filter((e) => e.type === 'personal').reduce((a, e) => a + e.amount, 0), icon: <CreditCard className="size-3.5" />, sub: `${active.filter((e) => e.type === 'personal').length} expenses` },
+        ...(isCouple ? [{ label: 'Common', value: active.filter((e) => e.type === 'common').reduce((a, e) => a + e.amount, 0), tone: 'text-violet-700', icon: <Link2 className="size-3.5" />, sub: `${active.filter((e) => e.type === 'common').length} shared bills` }] : []),
+      ]} />
       <ErrorNote message={error} />
       <TableCard>
         <DataTable

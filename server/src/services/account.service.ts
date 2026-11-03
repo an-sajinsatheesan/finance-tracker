@@ -303,7 +303,17 @@ export async function getBalances(workspaceId: string, month: string) {
     memberIds: ws.members.map((m) => String(m.userId)),
     month,
     startMonth: ws.startMonth,
+    // Every month since the workspace started (at least a year), so savings cover the whole history.
+    months: Math.max(12, monthsFrom(ws.startMonth, month)),
     base: ws.currency ?? 'AED',
     fx: fx as Record<string, number>,
   });
+}
+
+/** Months from `from` to `to` inclusive (1 when equal). */
+function monthsFrom(from: string | undefined, to: string) {
+  if (!from) return 1;
+  const [fy, fm] = from.split('-').map(Number);
+  const [ty, tm] = to.split('-').map(Number);
+  return Math.max(1, (ty - fy) * 12 + (tm - fm) + 1);
 }

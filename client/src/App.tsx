@@ -10,6 +10,7 @@ import IncomePage from './pages/Income';
 import Commitments from './pages/Commitments';
 import CommonBills from './pages/CommonBills';
 import Contracts from './pages/Contracts';
+import Reports from './pages/Reports';
 import Goals from './pages/Goals';
 import Accounts from './pages/Accounts';
 import WealthPage from './pages/Wealth';
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="commitments" element={<Commitments />} />
         <Route path="bills" element={<CommonBills />} />
         <Route path="contracts" element={<Contracts />} />
+        <Route path="reports" element={<Reports />} />
         <Route path="accounts" element={<Accounts />} />
         <Route path="wealth" element={<WealthPage />} />
         <Route path="balances" element={<BalancesPage />} />

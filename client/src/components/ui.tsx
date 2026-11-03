@@ -80,6 +80,31 @@ export function Logo({ size = 'md', className }: { size?: 'sm' | 'md' | 'lg'; cl
   );
 }
 
+export interface RailItem {
+  label: string; value: number; icon?: ReactNode; sub?: ReactNode;
+  /** Text colour of the figure; defaults to red when negative. */
+  tone?: string; currency?: string;
+}
+/** A row of summary cards at the top of a page (totals for the month and the current filter). */
+export function StatRail({ items, className }: { items: RailItem[]; className?: string }) {
+  return (
+    <div className={cx('mb-3 grid grid-cols-2 gap-3', items.length >= 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3', className)}>
+      {items.map((s) => (
+        <div key={s.label} className="card min-w-0 px-4 py-3">
+          <div className="flex items-center gap-2 text-xs font-medium text-stone-500">
+            {s.icon && <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-600">{s.icon}</span>}
+            <span className="truncate">{s.label}</span>
+          </div>
+          <div className={cx('num mt-1.5 truncate text-lg font-semibold tracking-tight', s.tone ?? (s.value < 0 ? 'text-rose-700' : 'text-stone-900'))}>
+            <span className="mr-1 text-xs font-medium text-stone-400">{s.currency ?? 'AED'}</span>{money(s.value)}
+          </div>
+          {s.sub && <div className="mt-0.5 truncate text-[11px] text-stone-500">{s.sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Money({ value, className, signed }: { value: number; className?: string; signed?: boolean }) {
   const neg = value < 0;
   return (

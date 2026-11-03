@@ -8,9 +8,9 @@ import { useMonth } from '../context/MonthContext';
 import { useApi } from '../lib/useApi';
 import { api, errorText } from '../lib/api';
 import type { Account, Income, IncomeSource, Member } from '../lib/types';
-import { dateLabel, monthLabel, todayStr } from '../lib/format';
+import { dateLabel, money, monthLabel, todayStr } from '../lib/format';
 import {
-  Badge, Button, Check, DateInput, Empty, ErrorNote, Field, IconButton, Modal, Money, NumberInput, Page, PageHeader, Select, Skeleton, TableCard, TableSkeleton, TextInput, usePaging,
+  Badge, Button, Check, DateInput, Empty, ErrorNote, Field, IconButton, Modal, Money, NumberInput, Page, PageHeader, Select, Skeleton, StatRail, TableCard, TableSkeleton, TextInput, usePaging,
   confirmAction, useToast,
 } from '../components/ui';
 import { AccountSelect, LookupSelect, MemberSelect, PAY_TIMING_OPTIONS } from '../components/forms';
@@ -210,20 +210,16 @@ export default function IncomePage() {
           <Button variant="primary" onClick={() => setEditing('new')} icon={<Plus className="size-3.5" />}>Add income</Button>
         </>}
       />
-      <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {workspace?.members.map((m) => {
-          const mine = live.filter((i) => i.userId === m.userId);
-          const exp = mine.reduce((a, i) => a + i.expectedAmount, 0);
-          const rec = mine.reduce((a, i) => a + i.receivedAmount, 0);
-          return (
-            <div key={m.userId} className="card px-4 py-3">
-              <div className="text-xs font-medium text-stone-500">{m.displayName}</div>
-              <div className="mt-1 text-lg font-semibold">{loading && !data ? <Skeleton className="my-1 h-5 w-28" /> : <Money value={rec} />}</div>
-              <div className="text-[11px] text-stone-500">received of <Money value={exp} /></div>
-            </div>
-          );
-        })}
-      </div>
+      {loading && !data ? <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map((k) => <div key={k} className="card px-4 py-3"><Skeleton className="h-3 w-20" /><Skeleton className="mt-2 h-5 w-28" /></div>)}</div> : (
+        <StatRail items={[
+          { label: 'Received', value: live.reduce((a, i) => a + i.receivedAmount, 0), tone: 'text-emerald-700', icon: <Wallet className="size-3.5" />, sub: `of ${money(live.reduce((a, i) => a + i.expectedAmount, 0))} expected` },
+          { label: 'Still to come', value: live.reduce((a, i) => a + Math.max(0, i.expectedAmount - i.receivedAmount), 0), tone: 'text-amber-700', icon: <Repeat className="size-3.5" />, sub: `${live.filter((i) => i.receivedAmount < i.expectedAmount).length} pending` },
+          ...(isCouple ? (workspace?.members ?? []) : []).map((m) => {
+            const mine = live.filter((i) => i.userId === m.userId);
+            return { label: m.displayName, value: mine.reduce((a, i) => a + i.receivedAmount, 0), icon: <CheckCircle2 className="size-3.5" />, sub: `received of ${money(mine.reduce((a, i) => a + i.expectedAmount, 0))}` };
+          }),
+        ]} />
+      )}
       <div className="mb-2 flex justify-end"><Check checked={showArchived} onChange={setShowArchived} label="Show archived" /></div>
       <ErrorNote message={error} />
       <TableCard>

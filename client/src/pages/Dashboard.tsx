@@ -27,38 +27,61 @@ function Settlement({ members, support, name }: { members: Member[]; support: Ca
   const [open, setOpen] = useState(false);
   const owed = members.find((m) => m.balance > 0.004);
   const owes = members.find((m) => m.balance < -0.004);
+  const settled = !(owed && owes);
   return (
-    <div className="card text-xs text-stone-600">
-      <button className="flex w-full items-center gap-2 px-4 py-2.5 text-left" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <ArrowRightLeft className="size-3.5 shrink-0 text-brand-600" />
-        <span className="flex-1">
-          {owed && owes
-            ? <><b>{name(owes.userId)}</b> owes <b>{name(owed.userId)}</b> AED <span className="num font-semibold">{money(owed.balance)}</span> for shared bills this month.</>
-            : 'Common expenses are settled — each of you paid exactly your part.'}
-          {support.map((x) => (
-            <span key={`${x.from}>${x.to}`} className="ml-1 text-emerald-700"> · <b>{name(x.from)}</b> supported <b>{name(x.to)}</b> AED <span className="num font-semibold">{money(x.amount)}</span></span>
-          ))}
+    <div className={cx('card overflow-hidden text-xs text-stone-600', !settled && 'border-amber-200')}>
+      <button
+        className={cx('flex w-full items-center gap-3 px-4 py-3 text-left transition-colors', settled ? 'hover:bg-emerald-50/50' : 'bg-amber-50/60 hover:bg-amber-50')}
+        onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="settle-up-details"
+      >
+        <span className={cx('flex size-8 shrink-0 items-center justify-center rounded-full', settled ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-100 text-amber-700')}>
+          {settled ? <CheckCircle2 className="size-4" /> : <ArrowRightLeft className="size-4" />}
         </span>
-        <span className="flex items-center gap-0.5 font-medium text-brand-700">Why? <ChevronDown className={cx('size-3.5 transition-transform', open && 'rotate-180')} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium text-stone-800">
+            {settled
+              ? 'Shared bills are settled'
+              : <><b>{name(owes!.userId)}</b> owes <b>{name(owed!.userId)}</b> AED <span className="num font-semibold">{money(owed!.balance)}</span></>}
+          </span>
+          <span className="block text-[11px] text-stone-500">
+            {settled ? 'Each of you paid exactly your part this month.' : 'For shared bills this month.'}
+            {support.map((x) => (
+              <span key={`${x.from}>${x.to}`} className="ml-1 text-emerald-700">· {name(x.from)} supported {name(x.to)} AED <span className="num font-semibold">{money(x.amount)}</span></span>
+            ))}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 font-medium text-brand-700">
+          {open ? 'Hide' : 'Why?'} <ChevronDown className={cx('size-3.5 transition-transform', open && 'rotate-180')} />
+        </span>
       </button>
       {open && (
-        <div className="space-y-3 border-t border-stone-100 px-4 py-3">
+        <div id="settle-up-details" className="space-y-3 border-t border-stone-100 bg-stone-50/60 px-4 py-4">
           <p>
-            Shared bills this month come to <b>AED <span className="num">{money(members.reduce((a, m) => a + m.commonShare, 0))}</span></b>.
+            Shared bills this month come to <b className="text-stone-800">AED <span className="num">{money(members.reduce((a, m) => a + m.commonShare, 0))}</span></b>.
             Each of you has a part of them (half, unless a commitment uses another split).
           </p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {members.map((m) => (
-              <div key={m.userId} className="rounded-xl border border-stone-200 px-3 py-2">
-                <div className="mb-1 font-semibold text-stone-800">{name(m.userId)}</div>
-                <div className="flex justify-between"><span>Their part</span><Money value={m.commonShare} /></div>
-                <div className="flex justify-between"><span>Actually paid</span><Money value={m.commonPaid} /></div>
-                <div className={cx('mt-1 flex justify-between border-t border-stone-100 pt-1 font-medium', m.balance < -0.004 ? 'text-rose-600' : m.balance > 0.004 ? 'text-emerald-700' : 'text-stone-700')}>
-                  <span>{m.balance < -0.004 ? 'Still to pay' : m.balance > 0.004 ? 'Paid extra' : 'All settled'}</span>
-                  {Math.abs(m.balance) > 0.004 && <Money value={Math.abs(m.balance)} />}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {members.map((m) => {
+              const tone = m.balance < -0.004 ? 'rose' : m.balance > 0.004 ? 'emerald' : 'stone';
+              return (
+                <div key={m.userId} className={cx('rounded-xl border bg-white px-3.5 py-3 shadow-[0_1px_2px_rgba(22,25,37,0.04)]',
+                  tone === 'rose' ? 'border-rose-200' : tone === 'emerald' ? 'border-emerald-200' : 'border-stone-200')}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-semibold text-stone-800">{name(m.userId)}</span>
+                    <span className={cx('rounded-full px-2 py-0.5 text-[11px] font-medium',
+                      tone === 'rose' ? 'bg-rose-50 text-rose-700' : tone === 'emerald' ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-100 text-stone-600')}>
+                      {tone === 'rose' ? 'Still to pay' : tone === 'emerald' ? 'Paid extra' : 'All settled'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-0.5"><span>Their part</span><Money value={m.commonShare} className="text-stone-800" /></div>
+                  <div className="flex justify-between py-0.5"><span>Actually paid</span><Money value={m.commonPaid} className="text-stone-800" /></div>
+                  <div className={cx('mt-1.5 flex justify-between border-t border-stone-100 pt-1.5 font-semibold',
+                    tone === 'rose' ? 'text-rose-700' : tone === 'emerald' ? 'text-emerald-700' : 'text-stone-700')}>
+                    <span>Difference</span><Money value={m.balance} signed />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           {owed && owes && (
             <p className="font-medium text-stone-800">
