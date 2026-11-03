@@ -84,6 +84,8 @@ export interface RailItem {
   label: string; value: number; icon?: ReactNode; sub?: ReactNode;
   /** Text colour of the figure; defaults to red when negative. */
   tone?: string; currency?: string;
+  /** Shown instead of the amount (e.g. a count of months). */
+  text?: string;
 }
 /** A row of summary cards at the top of a page (totals for the month and the current filter). */
 export function StatRail({ items, className }: { items: RailItem[]; className?: string }) {
@@ -96,7 +98,7 @@ export function StatRail({ items, className }: { items: RailItem[]; className?: 
             <span className="truncate">{s.label}</span>
           </div>
           <div className={cx('num mt-1.5 truncate text-lg font-semibold tracking-tight', s.tone ?? (s.value < 0 ? 'text-rose-700' : 'text-stone-900'))}>
-            <span className="mr-1 text-xs font-medium text-stone-400">{s.currency ?? 'AED'}</span>{moneyIn(s.value, s.currency ?? 'AED')}
+            {s.text ?? <><span className="mr-1 text-xs font-medium text-stone-400">{s.currency ?? 'AED'}</span>{moneyIn(s.value, s.currency ?? 'AED')}</>}
           </div>
           {s.sub && <div className="mt-0.5 truncate text-[11px] text-stone-500">{s.sub}</div>}
         </div>
