@@ -271,7 +271,7 @@ async function replaceWorkspaceData(workspaceId: string, b: BackupFile, session?
     opts,
   );
   for (const m of b.workspace.members) {
-    await User.updateOne({ _id: m.userId }, { $set: { displayName: m.displayName, relationship: m.relationship ?? '' } }, opts);
+    await User.updateOne({ _id: m.userId, workspaceId }, { $set: { displayName: m.displayName, relationship: m.relationship ?? '' } }, opts);
   }
 }
 

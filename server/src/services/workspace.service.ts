@@ -116,7 +116,7 @@ export async function updateWorkspace(
           key: s.key || new Types.ObjectId().toHexString(),
         })) as never;
       }
-      await User.updateOne({ _id: m.userId }, { $set: { displayName: m.displayName, relationship: m.relationship } });
+      await User.updateOne({ _id: m.userId, workspaceId }, { $set: { displayName: m.displayName, relationship: m.relationship } });
     }
   }
   await ws.save();

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
-import { Copy, KeyRound, LogOut, Pencil, ShieldCheck, UserCheck, UserX, Users } from 'lucide-react';
+import { KeyRound, LogOut, Pencil, ShieldCheck, UserCheck, UserX, Users } from 'lucide-react';
 import { Badge, Button, ErrorNote, Field, IconButton, Logo, Modal, StatRail, TableCard, TextInput, confirmAction, useToast } from '../components/ui';
 
 /** Admin requests use their own sign-in, kept for this browser tab only. */
@@ -68,7 +68,7 @@ function EditUser({ user, onClose, onSaved }: { user: AdminUser; onClose: () => 
     e.preventDefault();
     setBusy(true); setError(null);
     try {
-      await adminApi('PUT', `/admin/users/${user.id}`, { displayName: f.displayName, ...(f.email && { email: f.email }) });
+      await adminApi('PUT', `/admin/users/${user.id}`, { displayName: f.displayName, ...(user.status === 'invited' && f.email && { email: f.email }) });
       toast.success(`${f.displayName} saved`);
       onSaved();
     } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
@@ -76,7 +76,9 @@ function EditUser({ user, onClose, onSaved }: { user: AdminUser; onClose: () => 
   return (
     <form onSubmit={submit} className="space-y-3">
       <Field label="Name"><TextInput value={f.displayName} onChange={(v) => setF({ ...f, displayName: v })} required maxLength={50} /></Field>
-      <Field label="Email (sign-in)"><TextInput type="email" value={f.email} onChange={(v) => setF({ ...f, email: v })} /></Field>
+      {user.status === 'invited'
+        ? <Field label="Email (sign-in)"><TextInput type="email" value={f.email} onChange={(v) => setF({ ...f, email: v })} /></Field>
+        : <p className="text-[11px] text-stone-500">Email: <b>{user.email}</b>. Only {user.displayName} can change it, from their own Settings, so nobody else can take over the account.</p>}
       <ErrorNote message={error} />
       <div className="flex justify-end gap-2">
         <Button onClick={onClose}>Cancel</Button>
@@ -93,7 +95,6 @@ export default function Admin() {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<AdminUser | null>(null);
-  const [link, setLink] = useState<{ name: string; url: string; sent: boolean } | null>(null);
 
   const load = useCallback(async () => {
     try { setUsers(await adminApi<AdminUser[]>('GET', '/admin/users')); setError(null); } catch (err) {
@@ -109,8 +110,14 @@ export default function Admin() {
     acceptLabel: status === 'disabled' ? 'Disable' : 'Enable',
     onAccept: () => adminApi('PUT', `/admin/users/${u.id}`, { status }).then(() => { toast.success(`${u.displayName} ${status === 'disabled' ? 'disabled' : 'enabled'}`); load(); }, (e) => toast.error((e as Error).message)),
   });
-  const sendLink = (u: AdminUser) => adminApi<{ url: string; sent: boolean }>('POST', `/admin/users/${u.id}/password-link`)
-    .then((r) => setLink({ name: u.displayName, url: r.url, sent: r.sent }), (e) => toast.error((e as Error).message));
+  // The link goes only to the person's own email: the admin never sees it.
+  const sendLink = (u: AdminUser) => confirmAction({
+    header: `Email ${u.displayName} a password link?`,
+    message: `A link to choose a new password is emailed to ${u.email ?? 'their email'}. Any earlier link stops working.`,
+    acceptLabel: 'Send link',
+    onAccept: () => adminApi<{ sent: boolean; email: string }>('POST', `/admin/users/${u.id}/password-link`)
+      .then((r) => toast.success(`Password link emailed to ${r.email}`), (e) => toast.error((e as Error).message)),
+  });
   const all = users ?? [];
   const workspaces = new Set(all.map((u) => u.workspaceId)).size;
 
@@ -154,18 +161,6 @@ export default function Admin() {
       </main>
       <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit ${editing?.displayName ?? ''}`}>
         {editing && <EditUser user={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
-      </Modal>
-      <Modal open={!!link} onClose={() => setLink(null)} title={`Password link · ${link?.name ?? ''}`}>
-        {link && (
-          <div className="space-y-3 text-xs text-stone-600">
-            <p>{link.sent ? 'Emailed to them. You can also share this link:' : 'Email isn’t set up on the server, so share this link with them:'}</p>
-            <div className="flex items-center gap-2 rounded-lg bg-stone-50 p-2">
-              <code className="min-w-0 flex-1 truncate text-[11px]">{link.url}</code>
-              <IconButton title="Copy" onClick={() => navigator.clipboard?.writeText(link.url).then(() => toast.success('Link copied'))}><Copy className="size-3.5" /></IconButton>
-            </div>
-            <p className="text-[11px] text-stone-400">The link lets them choose a new password and works for 14 days. Any earlier link stops working.</p>
-          </div>
-        )}
       </Modal>
     </div>
   );
