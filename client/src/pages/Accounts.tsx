@@ -34,8 +34,8 @@ function useOwnerOptions(): Option[] {
 interface Row { key: number; bank: string; name: string; accountType: string; type: Kind; ownerId: string; accountNumberLast4: string; openedMonth: string; openingBalance: number | null; openingInvested: number | null }
 
 /** Adds several accounts of one currency at once, e.g. ENBD, RAK and EIB savings. */
-function AddAccounts({ currency: startCurrency, currencies, groups, month, onClose, onSaved }: {
-  currency: string; currencies: string[]; groups: AccountGroup[]; month: string; onClose: () => void; onSaved: () => void;
+function AddAccounts({ currency: startCurrency, currencies, groups, defaultType, month, onClose, onSaved }: {
+  currency: string; currencies: string[]; groups: AccountGroup[]; defaultType?: string; month: string; onClose: () => void; onSaved: () => void;
 }) {
   const [currency, setCurrency] = useState(startCurrency);
   const { user, isCouple } = useAuth();
@@ -46,7 +46,8 @@ function AddAccounts({ currency: startCurrency, currencies, groups, month, onClo
   const firstBank = options('bank').find(bankFilter)?.code ?? '';
   // Only the account types of this page (bank accounts, investments, or loans and cards).
   const typeFilter = (t: { meta: Record<string, unknown> }) => groups.includes(((t.meta.group as AccountGroup | undefined) ?? 'cash'));
-  const firstType = options('accountType').find(typeFilter)?.code ?? 'savings';
+  const firstType = options('accountType').find((t) => typeFilter(t) && (!defaultType || t.code === defaultType))?.code
+    ?? options('accountType').find(typeFilter)?.code ?? 'savings';
   const [seq, setSeq] = useState(1);
   const blank = (key: number): Row => ({
     key, bank: firstBank, name: '', accountType: firstType, type: 'personal', ownerId: user!.id, accountNumberLast4: '', openedMonth: month, openingBalance: null, openingInvested: null,
@@ -436,12 +437,16 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
   const [modal, setModal] = useState<'add' | 'balances' | 'transfer' | null>(null);
   const [editing, setEditing] = useState<Account | null>(null);
   const [transferTick, setTransferTick] = useState(0);
-  const paging = usePaging([month, tab, group]);
+  const paging = usePaging([month, tab, group, section]);
 
   const everything = data?.accounts ?? [];
   const all = everything.filter((a) => S.groups.includes(a.group));
   const inCurrency = all.filter((a) => a.currency === tab);
-  const rows = inCurrency.filter((a) => group === 'all' || a.group === group);
+  // Investments: one tab per type (stocks, mutual funds, gold…); the gold tab always shows.
+  const [kind, setKind] = useState<string>('all');
+  const kinds = section === 'investments' ? [...new Set([...inCurrency.map((a) => a.accountType), 'gold'])] : [];
+  const kindLabel = (k: string) => (k === 'all' ? 'All' : label('accountType', k));
+  const rows = inCurrency.filter((a) => (group === 'all' || a.group === group) && (kind === 'all' || a.accountType === kind));
   const stale = inCurrency.filter((a) => !a.recordedThisMonth).length;
   const isTransfers = tab === 'transfers';
 
@@ -452,8 +457,8 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
         subtitle={`${S.subtitle} · end of ${monthLabel(month)}`}
         actions={<>
           {section === 'bank' && <Button onClick={() => setModal('transfer')} disabled={everything.length < 2} icon={<ArrowRightLeft className="size-3.5" />}>Transfer</Button>}
-          {!isTransfers && <Button onClick={() => setModal('add')} icon={<Plus className="size-3.5" />}>Add {S.noun}s</Button>}
-          {!isTransfers && <Button variant="primary" onClick={() => setModal('balances')} disabled={!inCurrency.length} icon={<RefreshCw className="size-3.5" />}>Update balances</Button>}
+          {!isTransfers && <Button onClick={() => setModal('add')} icon={<Plus className="size-3.5" />}>{kind === 'all' ? `Add ${S.noun}s` : `Add ${kindLabel(kind)}`}</Button>}
+          {!isTransfers && <Button variant="primary" onClick={() => setModal('balances')} disabled={!rows.length} icon={<RefreshCw className="size-3.5" />}>{kind === 'all' ? 'Update balances' : `Update ${kindLabel(kind)} values`}</Button>}
         </>}
       />
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -462,7 +467,10 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
           onChange={setTab}
           items={[...currencies.map((c) => ({ value: c, label: c === 'AED' ? 'AED · UAE' : c === 'INR' ? 'INR · India' : c, count: all.filter((a) => a.currency === c).length })), ...(section === 'bank' ? [{ value: 'transfers', label: 'Transfers' }] : [])]}
         />
-        {!isTransfers && groupTabs.length > 0 && (
+        {!isTransfers && section === 'investments' && (
+          <Tabs<string> value={kind} onChange={setKind} items={['all', ...kinds].map((k) => ({ value: k, label: kindLabel(k), count: k === 'all' ? inCurrency.length : inCurrency.filter((a) => a.accountType === k).length }))} />
+        )}
+        {!isTransfers && section !== 'investments' && groupTabs.length > 0 && (
           <Tabs<AccountGroup | 'all'> value={group} onChange={setGroup} items={groupTabs.map((g) => ({ value: g, label: g === 'all' ? 'All' : GROUP_LABEL[g] }))} />
         )}
       </div>
@@ -472,12 +480,12 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
         <TransfersTab accounts={everything} month={month} tick={transferTick} />
       ) : (
         <>
-          {inCurrency.length > 0 && (() => {
-            const now = inCurrency.reduce((s, a) => s + (a.current ?? 0), 0);
-            const before = inCurrency.reduce((s, a) => s + (a.previous ?? 0), 0);
-            const n = `${inCurrency.length} ${S.noun}${inCurrency.length === 1 ? '' : 's'}`;
+          {rows.length > 0 && (() => {
+            const now = rows.reduce((s, a) => s + (a.current ?? 0), 0);
+            const before = rows.reduce((s, a) => s + (a.previous ?? 0), 0);
+            const n = `${rows.length} ${kind === 'all' ? S.noun : kindLabel(kind).toLowerCase()}${rows.length === 1 || kind !== 'all' ? '' : 's'}`;
             if (section === 'investments') {
-              const invested = inCurrency.reduce((s, a) => s + (a.invested ?? a.current ?? 0), 0);
+              const invested = rows.reduce((s, a) => s + (a.invested ?? a.current ?? 0), 0);
               return <StatRail items={[
                 { label: 'Current value', value: now, currency: tab, icon: <CreditCard className="size-3.5" />, sub: `${n} · end of ${monthLabel(month, 'short')}` },
                 { label: 'Invested', value: invested, currency: tab, icon: <Plus className="size-3.5" />, sub: 'Amount put in' },
@@ -492,7 +500,7 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
                 { label: 'Paid down', value: before - now, currency: tab, tone: before - now >= 0 ? 'text-emerald-700' : 'text-rose-700', icon: <ArrowRight className="size-3.5" />, sub: 'Since last month' },
               ]} />;
             }
-            const common = inCurrency.filter((a) => a.type === 'common').reduce((s, a) => s + (a.current ?? 0), 0);
+            const common = rows.filter((a) => a.type === 'common').reduce((s, a) => s + (a.current ?? 0), 0);
             return <StatRail items={[
               { label: `In the bank · ${tab}`, value: now, currency: tab, tone: now < 0 ? 'text-rose-700' : 'text-emerald-700', icon: <CreditCard className="size-3.5" />, sub: `${n} · end of ${monthLabel(month, 'short')}` },
               ...(isCouple ? [{ label: 'Personal accounts', value: now - common, currency: tab, icon: <Plus className="size-3.5" />, sub: 'Both of you' }] : []),
@@ -542,7 +550,7 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
             </DataTable>
           </TableCard>
           <p className="mt-2 shrink-0 text-[11px] text-stone-500">Change for loans and cards shows the effect on net worth (paying down a loan is positive). Gain = current value − amount invested.</p>
-          {section === 'investments' && <div className="mt-4"><GoldSection currency={tab} accounts={everything} onChanged={reload} /></div>}
+          {section === 'investments' && kind === 'gold' && <div className="mt-4"><GoldSection currency={tab} accounts={everything} onChanged={reload} /></div>}
           {section === 'loans' && (
             <p className="mt-3 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600">
               Add a housing loan as a <b>Loan</b> with the amount outstanding and update it each month. EMI schedule, interest and payoff tracking for the housing loan will come here later.
@@ -552,10 +560,10 @@ export default function Accounts({ section = 'bank' }: { section?: Section }) {
       )}
 
       <Modal open={modal === 'add'} onClose={() => setModal(null)} title={`Add ${S.noun}s`} size="xl">
-        <AddAccounts currency={tab === 'transfers' ? 'AED' : tab} currencies={currencies} groups={S.groups} month={month} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />
+        <AddAccounts currency={tab === 'transfers' ? 'AED' : tab} currencies={currencies} groups={S.groups} defaultType={kind === 'all' ? undefined : kind} month={month} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />
       </Modal>
-      <Modal open={modal === 'balances'} onClose={() => setModal(null)} title={`${tab} balances · ${monthLabel(month)}`} size="xl">
-        <UpdateBalances accounts={inCurrency} month={month} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />
+      <Modal open={modal === 'balances'} onClose={() => setModal(null)} title={`${tab}${kind !== 'all' ? ` ${kindLabel(kind)}` : ''} balances · ${monthLabel(month)}`} size="xl">
+        <UpdateBalances accounts={kind === 'all' ? inCurrency : rows} month={month} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />
       </Modal>
       <Modal open={modal === 'transfer'} onClose={() => setModal(null)} title="Record a transfer">
         <TransferForm accounts={all} month={month} onClose={() => setModal(null)} onSaved={() => { setModal(null); setTransferTick((t) => t + 1); reload(); setTab('transfers'); }} />
