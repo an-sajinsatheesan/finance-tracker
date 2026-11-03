@@ -7,7 +7,9 @@ import { ArrowRightLeft, CheckCircle2, ChevronDown, Coins, Plus, ReceiptText, Ta
 import { useAuth } from '../context/AuthContext';
 import { useMonth } from '../context/MonthContext';
 import { useApi } from '../lib/useApi';
-import type { Cards, Summary } from '../lib/types';
+import type { Balances, Cards, Summary } from '../lib/types';
+import { checkUp } from '../lib/insights';
+import { CheckUpCard } from '../components/CheckUp';
 import { addMonths, compact, money, monthLabel, monthShort, thisMonth } from '../lib/format';
 import { C, CATEGORY_COLORS, OTHER_COLOR } from '../lib/chartColors';
 import { BlockSkeleton, Button, ErrorNote, Money, Page, PageHeader, Skeleton, StatSkeleton, Tabs, TypeBadge, cx } from '../components/ui';
@@ -237,6 +239,9 @@ export default function Dashboard() {
   const { month } = useMonth();
   const [scope, setScope] = useState<string>(user!.id);
   const { data, error, loading, reload } = useApi<Summary>(`/summary?month=${month}&scope=${scope}`);
+  const balances = useApi<Balances>(`/balances?month=${month}`);
+  /** Money in the person's own bank accounts (base currency) for the emergency-fund check. */
+  const cashOf = (id: string) => balances.data?.byCurrency.find((x) => x.currency === balances.data!.base)?.totals.members[id] ?? null;
   const [paying, setPaying] = useState<Summary['commitmentsDue'][number] | null>(null);
   const [dueFilter, setDueFilter] = useState<DueFilter>('all');
 
@@ -316,6 +321,14 @@ export default function Dashboard() {
           </div>
 
           {isCouple && <Settlement members={c.members} support={c.support ?? []} name={memberName} />}
+
+          {!isCommon && (
+            <CheckUpCard
+              title={`Money check-up · ${isCouple && scope !== user!.id ? memberName(scope) : 'You'}`}
+              subtitle={`${monthLabel(month)} · own spending plus share of common bills`}
+              result={checkUp({ income: c.incomeReceived, lines: data.budgetVsActual.filter((r) => r.actual > 0).map((r) => ({ category: r.category, amount: r.actual })), cash: cashOf(scope) })}
+            />
+          )}
 
           <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
             <ChartCard title="Income vs spending · last 6 months">

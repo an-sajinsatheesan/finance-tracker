@@ -11,6 +11,8 @@ import type { BalanceAccount, Balances, Expense } from '../lib/types';
 import { categoryLabel, monthLabel, moneyIn, thisMonth } from '../lib/format';
 import { Button, ErrorNote, Money, Page, PageHeader, StatRail, TableCard, TableSkeleton, Tabs, cx } from '../components/ui';
 import { CategoryIcon } from '../components/CategoryIcon';
+import { CheckUpCard } from '../components/CheckUp';
+import { checkUp } from '../lib/insights';
 
 type View = 'month' | 'lifetime';
 type Saving = Balances['savings'][number];
@@ -85,6 +87,24 @@ function MonthReport({ month, data, error, expenses, members, isCouple }: {
           <Column header="Savings rate" align="right" body={(m: Saving['members'][number]) => <span className={cx('num', tone(m.saved))}>{pct(m.saved, m.income)}%</span>} />
         </DataTable>
       </TableCard>
+
+      {row && (
+        <div className={cx('grid gap-4', members.length > 1 && 'lg:grid-cols-2')}>
+          {members.map((m) => {
+            const lines = active.flatMap((e) => e.shares.filter((s) => s.userId === m.userId && s.amount > 0)
+              .map((s) => ({ category: e.category, custom: e.customCategory, amount: s.amount })));
+            const income = row.members.find((x) => x.userId === m.userId)?.income ?? 0;
+            const cash = data?.byCurrency.find((x) => x.currency === data.base)?.totals.members[m.userId] ?? null;
+            return (
+              <CheckUpCard
+                key={m.userId} title={`Money check-up · ${m.displayName}`}
+                subtitle={`${monthLabel(month)} · own spending${isCouple ? ' plus share of common bills' : ''}`}
+                result={checkUp({ income, lines, cash })}
+              />
+            );
+          })}
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <TableCard>
