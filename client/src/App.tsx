@@ -47,7 +47,9 @@ export default function App() {
         <Route path="bills" element={<CommonBills />} />
         <Route path="contracts" element={<Contracts />} />
         <Route path="reports" element={<Reports />} />
-        <Route path="accounts" element={<Accounts />} />
+        <Route path="accounts" element={<Accounts key="bank" />} />
+        <Route path="investments" element={<Accounts key="investments" section="investments" />} />
+        <Route path="loans" element={<Accounts key="loans" section="loans" />} />
         <Route path="wealth" element={<WealthPage />} />
         <Route path="balances" element={<BalancesPage />} />
         <Route path="goals" element={<Goals />} />

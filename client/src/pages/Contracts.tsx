@@ -150,7 +150,7 @@ function DepositForm({ initial, contracts, onClose, onSaved }: { initial?: Depos
   const toast = useToast();
   const owners = useOwners();
   const [f, setF] = useState({
-    name: initial?.name ?? '', amount: initial?.amount ?? null as number | null, owner: initial ? ownerValue(initial) : user?.id ?? '',
+    name: initial?.name ?? '', amount: initial?.amount ?? null as number | null, currency: initial?.currency ?? 'AED', owner: initial ? ownerValue(initial) : user?.id ?? '',
     contractId: initial?.contractId ?? '', paidDate: initial?.paidDate ?? '', notes: initial?.notes ?? '',
   });
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +159,7 @@ function DepositForm({ initial, contracts, onClose, onSaved }: { initial?: Depos
     e.preventDefault();
     if (!f.amount) { setError('Enter the amount'); return; }
     setBusy(true);
-    const body = { ...fromOwner(f.owner), name: f.name, amount: f.amount, contractId: f.contractId || null, paidDate: f.paidDate || null, notes: f.notes };
+    const body = { ...fromOwner(f.owner), name: f.name, amount: f.amount, currency: f.currency, contractId: f.contractId || null, paidDate: f.paidDate || null, notes: f.notes };
     try {
       if (initial) await api.put(`/deposits/${initial.id}`, body);
       else await api.post('/deposits', body);
@@ -171,7 +171,10 @@ function DepositForm({ initial, contracts, onClose, onSaved }: { initial?: Depos
     <form onSubmit={submit} className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <Field label="Name"><TextInput value={f.name} onChange={(v) => setF({ ...f, name: v })} required maxLength={80} placeholder="e.g. DEWA deposit" /></Field>
-        <Field label="Amount (AED)"><NumberInput value={f.amount} onChange={(v) => setF({ ...f, amount: v })} min={0.01} required /></Field>
+        <div className="grid grid-cols-[1fr_6rem] gap-2">
+          <Field label="Amount"><NumberInput value={f.amount} onChange={(v) => setF({ ...f, amount: v })} min={0.01} required /></Field>
+          <Field label="Currency"><Select value={f.currency} options={['AED', 'INR'].map((c) => ({ label: c, value: c }))} onChange={(v) => setF({ ...f, currency: v || 'AED' })} /></Field>
+        </div>
       </div>
       <div className="grid grid-cols-3 gap-3">
         <Field label="Belongs to"><Select value={f.owner} options={owners} onChange={(v) => setF({ ...f, owner: v || (user?.id ?? '') })} /></Field>
@@ -331,7 +334,7 @@ export default function Contracts() {
         <TableCard>
           <div className="flex items-center justify-between px-4 pb-2 pt-4">
             <h2 className="text-sm font-semibold text-stone-800">Deposits</h2>
-            <span className="text-xs text-stone-500">Held now <Money value={held.reduce((a, d) => a + d.amount, 0)} className="font-semibold text-stone-800" /> AED</span>
+            <span className="text-xs text-stone-500">Held now {[...new Set(held.map((d) => d.currency))].map((c) => <span key={c} className="ml-2 font-semibold text-stone-800">{c} {money(held.filter((d) => d.currency === c).reduce((a, d) => a + d.amount, 0))}</span>)}{held.length === 0 && ' —'}</span>
           </div>
           <DataTable
             value={deposits} dataKey="id" size="small"
@@ -345,7 +348,7 @@ export default function Contracts() {
             )} />
             <Column header="Belongs to" body={(d: Deposit) => d.type === 'common' ? <Badge tone="violet">Common</Badge> : <span className="text-xs text-stone-600">{memberName(d.ownerId)}</span>} />
             <Column header="Paid on" body={(d: Deposit) => <span className="text-xs text-stone-600">{fullDate(d.paidDate)}</span>} />
-            <Column header="Amount" align="right" body={(d: Deposit) => <Money value={d.amount} className={cx('font-medium', d.refundedDate && 'text-stone-400 line-through')} />} />
+            <Column header="Amount" align="right" body={(d: Deposit) => <span className={cx('num font-medium', d.refundedDate && 'text-stone-400 line-through')}><span className="mr-1 text-[11px] text-stone-400">{d.currency}</span>{money(d.amount)}</span>} />
             <Column header="Status" body={(d: Deposit) => (d.refundedDate
               ? <span className="text-xs text-stone-500">Refunded {fullDate(d.refundedDate)}</span>
               : <span className="text-xs text-brand-700">Held</span>)} />

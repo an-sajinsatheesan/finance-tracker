@@ -16,6 +16,7 @@ import * as lookups from '../controllers/lookup.controller.js';
 import * as accounts from '../controllers/account.controller.js';
 import * as reminders from '../controllers/reminder.controller.js';
 import * as contracts from '../controllers/contract.controller.js';
+import * as gold from '../controllers/gold.controller.js';
 
 export const router = Router();
 
@@ -91,6 +92,10 @@ router.post('/contracts/:id/archive', h(contracts.archive));
 router.put('/contracts/:id/cheques/:chequeId', body(v.chequeSchema), h(contracts.setCheque));
 router.post('/deposits', body(v.depositCreateSchema), h(contracts.createDeposit));
 router.put('/deposits/:id', body(v.depositUpdateSchema), h(contracts.updateDeposit));
+router.get('/gold', h(gold.list));
+router.post('/gold', body(v.goldItemCreateSchema), h(gold.create));
+router.put('/gold/price', body(v.goldPriceSchema), h(gold.setPrice));
+router.put('/gold/:id', body(v.goldItemUpdateSchema), h(gold.update));
 router.put('/account-balances', body(v.balancesSaveSchema), h(accounts.saveBalances));
 router.get('/transfers', query(v.monthQuery), h(accounts.listTransfers));
 router.post('/transfers', body(v.transferCreateSchema), h(accounts.createTransfer));

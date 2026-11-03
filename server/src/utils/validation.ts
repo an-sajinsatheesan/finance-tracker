@@ -322,6 +322,7 @@ export const depositCreateSchema = z
     ...owner,
     name: text(80).min(1),
     amount: positiveMoney,
+    currency: z.string().trim().regex(/^[A-Z]{3}$/).default('AED'),
     contractId: objectId.optional().nullable(),
     paidDate: date.optional().nullable(),
     refundedDate: date.optional().nullable(),
@@ -334,9 +335,44 @@ export const depositUpdateSchema = z.object({
   ownerId: owner.ownerId,
   name: text(80).min(1).optional(),
   amount: positiveMoney.optional(),
+  currency: z.string().trim().regex(/^[A-Z]{3}$/).optional(),
   contractId: objectId.optional().nullable(),
   paidDate: date.optional().nullable(),
   refundedDate: date.optional().nullable(),
   notes: text(500).optional(),
   archived: z.boolean().optional(),
+});
+
+// ---------- Gold ----------
+
+const karat = z.enum(['24K', '22K', '18K']);
+export const goldItemCreateSchema = z
+  .object({
+    ...owner,
+    name: text(80).min(1),
+    grams: z.coerce.number().finite().gt(0).max(100_000),
+    karat: karat.default('22K'),
+    location: text(80).default(''),
+    accountId: objectId.optional().nullable(),
+    notes: text(500).default(''),
+  })
+  .refine(ownerNeeded, { message: 'Personal gold needs an owner', path: ['ownerId'] });
+
+export const goldItemUpdateSchema = z.object({
+  type: owner.type.optional(),
+  ownerId: owner.ownerId,
+  name: text(80).min(1).optional(),
+  grams: z.coerce.number().finite().gt(0).max(100_000).optional(),
+  karat: karat.optional(),
+  location: text(80).optional(),
+  accountId: objectId.optional().nullable(),
+  notes: text(500).optional(),
+  archived: z.boolean().optional(),
+});
+
+const perGram = z.coerce.number().finite().gt(0).max(10_000_000).optional().nullable();
+export const goldPriceSchema = z.object({
+  currency: z.string().trim().regex(/^[A-Z]{3}$/),
+  perGram24: perGram, perGram22: perGram, perGram18: perGram,
+  date: date.optional().nullable(),
 });

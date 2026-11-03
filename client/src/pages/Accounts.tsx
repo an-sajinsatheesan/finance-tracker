@@ -14,9 +14,9 @@ import {
   confirmAction, cx, useToast, type Option,
 } from '../components/ui';
 import { AddLookupModal, AddValueButton, LookupSelect } from '../components/forms';
+import { GoldSection } from './Gold';
 
 export const GROUP_LABEL: Record<AccountGroup, string> = { cash: 'Savings & cash', deposit: 'Deposits', investment: 'Investments', liability: 'Loans & cards' };
-const GROUPS: (AccountGroup | 'all')[] = ['all', 'cash', 'deposit', 'investment', 'liability'];
 
 function Amount({ value, currency, className, signed }: { value: number | null; currency: string; className?: string; signed?: boolean }) {
   if (value === null) return <span className="text-stone-300">—</span>;
@@ -34,16 +34,22 @@ function useOwnerOptions(): Option[] {
 interface Row { key: number; bank: string; name: string; accountType: string; type: Kind; ownerId: string; accountNumberLast4: string; openedMonth: string; openingBalance: number | null; openingInvested: number | null }
 
 /** Adds several accounts of one currency at once, e.g. ENBD, RAK and EIB savings. */
-function AddAccounts({ currency, month, onClose, onSaved }: { currency: string; month: string; onClose: () => void; onSaved: () => void }) {
+function AddAccounts({ currency: startCurrency, currencies, groups, month, onClose, onSaved }: {
+  currency: string; currencies: string[]; groups: AccountGroup[]; month: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [currency, setCurrency] = useState(startCurrency);
   const { user, isCouple } = useAuth();
   const { options, find } = useLookups();
   const toast = useToast();
   const ownerOptions = useOwnerOptions();
   const bankFilter = (b: { meta: Record<string, unknown> }) => !b.meta.currency || b.meta.currency === currency;
   const firstBank = options('bank').find(bankFilter)?.code ?? '';
+  // Only the account types of this page (bank accounts, investments, or loans and cards).
+  const typeFilter = (t: { meta: Record<string, unknown> }) => groups.includes(((t.meta.group as AccountGroup | undefined) ?? 'cash'));
+  const firstType = options('accountType').find(typeFilter)?.code ?? 'savings';
   const [seq, setSeq] = useState(1);
   const blank = (key: number): Row => ({
-    key, bank: firstBank, name: '', accountType: 'savings', type: 'personal', ownerId: user!.id, accountNumberLast4: '', openedMonth: month, openingBalance: null, openingInvested: null,
+    key, bank: firstBank, name: '', accountType: firstType, type: 'personal', ownerId: user!.id, accountNumberLast4: '', openedMonth: month, openingBalance: null, openingInvested: null,
   });
   const [rows, setRows] = useState<Row[]>([blank(0)]);
   const [addingBankFor, setAddingBankFor] = useState<number | null>(null);
@@ -89,6 +95,16 @@ function AddAccounts({ currency, month, onClose, onSaved }: { currency: string; 
 
   return (
     <form onSubmit={submit} className="space-y-3">
+      {currencies.length > 1 && (
+        <div className="flex items-center gap-2 text-xs text-stone-600">
+          Currency
+          <Tabs<string> value={currency} onChange={(c) => {
+            setCurrency(c);
+            const bank = options('bank').find((b) => !b.meta.currency || b.meta.currency === c)?.code ?? '';
+            setRows((rs) => rs.map((r) => ({ ...r, bank })));
+          }} items={currencies.map((c) => ({ value: c, label: c === 'AED' ? 'AED · UAE' : c === 'INR' ? 'INR · India' : c }))} />
+        </div>
+      )}
       <p className="text-xs text-stone-500">Pick the month each balance is from; the account is tracked from that month. Balance = amount at the end of that month (for loans and cards, the amount outstanding). Leave the name blank to use “Bank + type”.</p>
       <div className="overflow-hidden rounded-md border border-stone-200">
         <DataTable value={rows} dataKey="key" size="small" scrollable tableStyle={{ minWidth: '72rem' }}>
@@ -99,7 +115,7 @@ function AddAccounts({ currency, month, onClose, onSaved }: { currency: string; 
               <AddValueButton title="Add a bank" onClick={() => setAddingBankFor(r.key)} />
             </div>
           )} />
-          <Column header="Type" style={{ width: '11rem' }} body={(r: Row) => <LookupSelect type="accountType" value={r.accountType} onChange={(v) => upd(r.key, { accountType: v })} />} />
+          <Column header="Type" style={{ width: '11rem' }} body={(r: Row) => <LookupSelect type="accountType" value={r.accountType} onChange={(v) => upd(r.key, { accountType: v })} filter={typeFilter} />} />
           <Column header="Name (optional)" body={(r: Row) => <TextInput value={r.name} onChange={(v) => upd(r.key, { name: v })} maxLength={80} placeholder="e.g. Salary account" />} />
           {isCouple && <Column header="Owner" style={{ width: '9rem' }} body={(r: Row) => (
             <Select value={r.type === 'common' ? 'common' : r.ownerId} options={ownerOptions}
@@ -396,7 +412,15 @@ function TransfersTab({ accounts, month, tick }: { accounts: WealthAccount[]; mo
 
 // ---------------- Page ----------------
 
-export default function Accounts() {
+type Section = 'bank' | 'investments' | 'loans';
+const SECTIONS: Record<Section, { title: string; subtitle: string; groups: AccountGroup[]; noun: string }> = {
+  bank: { title: 'Accounts', subtitle: 'Bank accounts: savings, current, NRE / NRO and cash', groups: ['cash'], noun: 'bank account' },
+  investments: { title: 'Investments', subtitle: 'Deposits, stocks, mutual funds, SIPs, gold and PPF / NPS', groups: ['deposit', 'investment'], noun: 'investment' },
+  loans: { title: 'Loans & cards', subtitle: 'Housing loan, other loans and credit cards: the amount outstanding', groups: ['liability'], noun: 'loan or card' },
+};
+
+export default function Accounts({ section = 'bank' }: { section?: Section }) {
+  const S = SECTIONS[section];
   const { month } = useMonth();
   const { memberName, isCouple } = useAuth();
   const { label, options } = useLookups();
@@ -408,26 +432,27 @@ export default function Accounts() {
   }, [data, options]);
   const [tab, setTab] = useState<string>('AED');
   const [group, setGroup] = useState<AccountGroup | 'all'>('all');
+  const groupTabs: (AccountGroup | 'all')[] = S.groups.length > 1 ? ['all', ...S.groups] : [];
   const [modal, setModal] = useState<'add' | 'balances' | 'transfer' | null>(null);
   const [editing, setEditing] = useState<Account | null>(null);
   const [transferTick, setTransferTick] = useState(0);
   const paging = usePaging([month, tab, group]);
 
-  const all = data?.accounts ?? [];
+  const everything = data?.accounts ?? [];
+  const all = everything.filter((a) => S.groups.includes(a.group));
   const inCurrency = all.filter((a) => a.currency === tab);
   const rows = inCurrency.filter((a) => group === 'all' || a.group === group);
-  const totals = data?.byCurrency.find((c) => c.currency === tab);
   const stale = inCurrency.filter((a) => !a.recordedThisMonth).length;
   const isTransfers = tab === 'transfers';
 
   return (
-    <Page fill>
+    <Page fill={section !== "investments"}>
       <PageHeader
-        title="Accounts"
-        subtitle={`Bank balances, deposits, investments and loans · end of ${monthLabel(month)}`}
+        title={S.title}
+        subtitle={`${S.subtitle} · end of ${monthLabel(month)}`}
         actions={<>
-          <Button onClick={() => setModal('transfer')} disabled={all.length < 2} icon={<ArrowRightLeft className="size-3.5" />}>Transfer</Button>
-          {!isTransfers && <Button onClick={() => setModal('add')} icon={<Plus className="size-3.5" />}>Add {tab} accounts</Button>}
+          {section === 'bank' && <Button onClick={() => setModal('transfer')} disabled={everything.length < 2} icon={<ArrowRightLeft className="size-3.5" />}>Transfer</Button>}
+          {!isTransfers && <Button onClick={() => setModal('add')} icon={<Plus className="size-3.5" />}>Add {S.noun}s</Button>}
           {!isTransfers && <Button variant="primary" onClick={() => setModal('balances')} disabled={!inCurrency.length} icon={<RefreshCw className="size-3.5" />}>Update balances</Button>}
         </>}
       />
@@ -435,26 +460,46 @@ export default function Accounts() {
         <Tabs<string>
           value={tab}
           onChange={setTab}
-          items={[...currencies.map((c) => ({ value: c, label: c, count: all.filter((a) => a.currency === c).length })), { value: 'transfers', label: 'Transfers' }]}
+          items={[...currencies.map((c) => ({ value: c, label: c === 'AED' ? 'AED · UAE' : c === 'INR' ? 'INR · India' : c, count: all.filter((a) => a.currency === c).length })), ...(section === 'bank' ? [{ value: 'transfers', label: 'Transfers' }] : [])]}
         />
-        {!isTransfers && (
-          <Tabs<AccountGroup | 'all'> value={group} onChange={setGroup} items={GROUPS.map((g) => ({ value: g, label: g === 'all' ? 'All' : GROUP_LABEL[g] }))} />
+        {!isTransfers && groupTabs.length > 0 && (
+          <Tabs<AccountGroup | 'all'> value={group} onChange={setGroup} items={groupTabs.map((g) => ({ value: g, label: g === 'all' ? 'All' : GROUP_LABEL[g] }))} />
         )}
       </div>
       <ErrorNote message={error} />
 
       {isTransfers ? (
-        <TransfersTab accounts={all} month={month} tick={transferTick} />
+        <TransfersTab accounts={everything} month={month} tick={transferTick} />
       ) : (
         <>
-          {totals && (
-            <StatRail items={[
-              { label: `Net ${tab}`, value: totals.net, currency: tab, icon: <CreditCard className="size-3.5" />, sub: `${inCurrency.length} account${inCurrency.length === 1 ? '' : 's'} · end of ${monthLabel(month, 'short')}` },
-              { label: 'Assets', value: totals.assets, currency: tab, tone: 'text-emerald-700', icon: <Plus className="size-3.5" />, sub: 'Bank, deposits and investments' },
-              { label: 'Loans & cards', value: totals.liabilities, currency: tab, tone: totals.liabilities > 0 ? 'text-rose-700' : 'text-stone-900', icon: <Archive className="size-3.5" />, sub: 'Outstanding' },
-              { label: 'Change vs last month', value: totals.change, currency: tab, tone: totals.change < 0 ? 'text-rose-700' : 'text-emerald-700', icon: <ArrowRight className="size-3.5" />, sub: `${monthLabel(addMonths(month, -1), 'short')}: ${moneyIn(totals.previousNet, tab)}` },
-            ]} />
-          )}
+          {inCurrency.length > 0 && (() => {
+            const now = inCurrency.reduce((s, a) => s + (a.current ?? 0), 0);
+            const before = inCurrency.reduce((s, a) => s + (a.previous ?? 0), 0);
+            const n = `${inCurrency.length} ${S.noun}${inCurrency.length === 1 ? '' : 's'}`;
+            if (section === 'investments') {
+              const invested = inCurrency.reduce((s, a) => s + (a.invested ?? a.current ?? 0), 0);
+              return <StatRail items={[
+                { label: 'Current value', value: now, currency: tab, icon: <CreditCard className="size-3.5" />, sub: `${n} · end of ${monthLabel(month, 'short')}` },
+                { label: 'Invested', value: invested, currency: tab, icon: <Plus className="size-3.5" />, sub: 'Amount put in' },
+                { label: 'Gain / loss', value: now - invested, currency: tab, tone: now - invested < 0 ? 'text-rose-700' : 'text-emerald-700', icon: <ArrowRight className="size-3.5" />, sub: invested > 0 ? `${(((now - invested) / invested) * 100).toFixed(2)}%` : '—' },
+                { label: 'Change vs last month', value: now - before, currency: tab, tone: now - before < 0 ? 'text-rose-700' : 'text-emerald-700', icon: <RefreshCw className="size-3.5" />, sub: `${monthLabel(addMonths(month, -1), 'short')}: ${moneyIn(before, tab)}` },
+              ]} />;
+            }
+            if (section === 'loans') {
+              return <StatRail items={[
+                { label: 'Outstanding', value: now, currency: tab, tone: now > 0 ? 'text-rose-700' : 'text-stone-900', icon: <Archive className="size-3.5" />, sub: n },
+                { label: 'Last month', value: before, currency: tab, icon: <RefreshCw className="size-3.5" />, sub: monthLabel(addMonths(month, -1), 'short') },
+                { label: 'Paid down', value: before - now, currency: tab, tone: before - now >= 0 ? 'text-emerald-700' : 'text-rose-700', icon: <ArrowRight className="size-3.5" />, sub: 'Since last month' },
+              ]} />;
+            }
+            const common = inCurrency.filter((a) => a.type === 'common').reduce((s, a) => s + (a.current ?? 0), 0);
+            return <StatRail items={[
+              { label: `In the bank · ${tab}`, value: now, currency: tab, tone: now < 0 ? 'text-rose-700' : 'text-emerald-700', icon: <CreditCard className="size-3.5" />, sub: `${n} · end of ${monthLabel(month, 'short')}` },
+              ...(isCouple ? [{ label: 'Personal accounts', value: now - common, currency: tab, icon: <Plus className="size-3.5" />, sub: 'Both of you' }] : []),
+              ...(isCouple ? [{ label: 'Common account', value: common, currency: tab, tone: 'text-violet-700', icon: <Archive className="size-3.5" />, sub: 'Shared bills money' }] : []),
+              { label: 'Change vs last month', value: now - before, currency: tab, tone: now - before < 0 ? 'text-rose-700' : 'text-emerald-700', icon: <ArrowRight className="size-3.5" />, sub: `${monthLabel(addMonths(month, -1), 'short')}: ${moneyIn(before, tab)}` },
+            ]} />;
+          })()}
           {stale > 0 && inCurrency.length > 0 && (
             <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               {stale} of {inCurrency.length} {tab} account{inCurrency.length > 1 ? 's' : ''} without an entered balance for {monthLabel(month)}: showing the calculated balance (last entered balance + linked income − expenses).{' '}
@@ -468,16 +513,15 @@ export default function Accounts() {
               {...paging}
               size="small"
               tableStyle={{ minWidth: '48rem' }}
-              emptyMessage={loading && !data ? <TableSkeleton cols={isCouple ? 7 : 6} /> : <Empty icon={<CreditCard className="size-8" />} title={`No ${tab} accounts${group === 'all' ? '' : ` in ${GROUP_LABEL[group]}`}`}>
-                Add your {tab === 'INR' ? 'SBI, Federal, SIP, stocks…' : 'ENBD, RAK, EIB…'} accounts to track balances month by month.
+              emptyMessage={loading && !data ? <TableSkeleton cols={isCouple ? 7 : 6} /> : <Empty icon={<CreditCard className="size-8" />} title={`No ${tab} ${S.noun}s yet`}>
+                {section === 'bank' ? (tab === 'INR' ? 'Add your Federal NRE / NRO, HDFC, ICICI… accounts' : 'Add your ENBD, RAK, EIB… accounts') : section === 'investments' ? 'Add deposits, Zerodha stocks, mutual funds, SIPs or gold' : 'Add a housing loan, car loan or credit card'} to track them month by month.
               </Empty>}
-              footer={totals && group === 'all' && rows.length > 0 && (
+              footer={rows.length > 0 && (
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <span className="text-stone-600">Net {tab} <span className="text-stone-400">(assets {moneyIn(totals.assets, tab)} − loans {moneyIn(totals.liabilities, tab)})</span></span>
+                  <span className="text-stone-600">Total {tab}{section === 'loans' ? ' outstanding' : ''}</span>
                   <span className="flex items-center gap-4">
-                    <span className="text-stone-500">{monthLabel(addMonths(month, -1), 'short')} <Amount value={totals.previousNet} currency={tab} /></span>
-                    <span className="font-semibold">{monthLabel(month, 'short')} <Amount value={totals.net} currency={tab} /></span>
-                    <Amount value={totals.change} currency={tab} signed />
+                    <span className="text-stone-500">{monthLabel(addMonths(month, -1), 'short')} <Amount value={rows.reduce((s, a) => s + (a.previous ?? 0), 0)} currency={tab} /></span>
+                    <span className="font-semibold">{monthLabel(month, 'short')} <Amount value={rows.reduce((s, a) => s + (a.current ?? 0), 0)} currency={tab} /></span>
                   </span>
                 </div>
               )}
@@ -498,11 +542,17 @@ export default function Accounts() {
             </DataTable>
           </TableCard>
           <p className="mt-2 shrink-0 text-[11px] text-stone-500">Change for loans and cards shows the effect on net worth (paying down a loan is positive). Gain = current value − amount invested.</p>
+          {section === 'investments' && <div className="mt-4"><GoldSection currency={tab} accounts={everything} onChanged={reload} /></div>}
+          {section === 'loans' && (
+            <p className="mt-3 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600">
+              Add a housing loan as a <b>Loan</b> with the amount outstanding and update it each month. EMI schedule, interest and payoff tracking for the housing loan will come here later.
+            </p>
+          )}
         </>
       )}
 
-      <Modal open={modal === 'add'} onClose={() => setModal(null)} title={`Add ${tab} accounts`} size="xl">
-        <AddAccounts currency={tab} month={month} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />
+      <Modal open={modal === 'add'} onClose={() => setModal(null)} title={`Add ${S.noun}s`} size="xl">
+        <AddAccounts currency={tab === 'transfers' ? 'AED' : tab} currencies={currencies} groups={S.groups} month={month} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />
       </Modal>
       <Modal open={modal === 'balances'} onClose={() => setModal(null)} title={`${tab} balances · ${monthLabel(month)}`} size="xl">
         <UpdateBalances accounts={inCurrency} month={month} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />

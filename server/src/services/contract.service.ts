@@ -16,7 +16,7 @@ export type ContractInput = Owner & {
   chequesPaid?: number;
 };
 export type DepositInput = Owner & {
-  name: string; amount: number; contractId?: string | null; paidDate?: string | null; refundedDate?: string | null; notes?: string;
+  name: string; amount: number; currency?: string; contractId?: string | null; paidDate?: string | null; refundedDate?: string | null; notes?: string;
 };
 
 async function checkOwner(workspaceId: string, o: Owner) {
@@ -32,7 +32,7 @@ const serializeContract = (c: any) => ({
   renewedFrom: c.renewedFrom ? String(c.renewedFrom) : null, notes: c.notes ?? '', status: c.status,
 });
 const serializeDeposit = (d: any) => ({
-  id: String(d._id), name: d.name, amount: d.amount, type: d.type, ownerId: d.ownerId ? String(d.ownerId) : null,
+  id: String(d._id), name: d.name, amount: d.amount, currency: d.currency ?? 'AED', type: d.type, ownerId: d.ownerId ? String(d.ownerId) : null,
   contractId: d.contractId ? String(d.contractId) : null, paidDate: d.paidDate ?? null, refundedDate: d.refundedDate ?? null,
   notes: d.notes ?? '', status: d.status,
 });
@@ -133,7 +133,7 @@ export async function archiveContract(workspaceId: string, id: string) {
 export async function createDeposit(workspaceId: string, userId: string, input: DepositInput) {
   await checkOwner(workspaceId, input);
   const doc = await Deposit.create({
-    workspaceId, name: input.name, amount: round2(input.amount), type: input.type, ownerId: input.type === 'personal' ? input.ownerId : undefined,
+    workspaceId, name: input.name, amount: round2(input.amount), currency: input.currency ?? 'AED', type: input.type, ownerId: input.type === 'personal' ? input.ownerId : undefined,
     contractId: input.contractId || undefined, paidDate: input.paidDate || undefined, refundedDate: input.refundedDate || undefined,
     notes: input.notes ?? '', createdBy: userId,
   });
@@ -147,6 +147,7 @@ export async function updateDeposit(workspaceId: string, id: string, input: Part
   if (input.name !== undefined) doc.name = input.name;
   if (input.amount !== undefined) doc.amount = round2(input.amount);
   if (input.notes !== undefined) doc.notes = input.notes;
+  if (input.currency) doc.currency = input.currency;
   for (const k of ['contractId', 'paidDate', 'refundedDate'] as const) if (input[k] !== undefined) doc.set(k, input[k] || undefined);
   if (input.archived !== undefined) doc.status = input.archived ? 'archived' : 'active';
   await doc.save();

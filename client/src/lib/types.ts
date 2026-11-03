@@ -150,6 +150,6 @@ export interface Contract {
 }
 /** Money held as a deposit (apartment, DEWA, gas…); it comes back when refunded. */
 export interface Deposit {
-  id: string; name: string; amount: number; type: Kind; ownerId: string | null; contractId: string | null;
+  id: string; name: string; amount: number; currency: string; type: Kind; ownerId: string | null; contractId: string | null;
   paidDate: string | null; refundedDate: string | null; notes: string; status: 'active' | 'archived';
 }

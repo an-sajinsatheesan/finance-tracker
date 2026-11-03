@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppError, badRequest, notFound } from '../utils/AppError.js';
 import { round2, sum } from '../utils/money.js';
 import {
-  Account, AccountBalance, Backup, Commitment, Contract, Contribution, Deposit, Expense, Goal, GoalAllocation, Income, IncomeMonth, Lookup, Transfer, User, Workspace,
+  Account, AccountBalance, Backup, Commitment, Contract, Contribution, Deposit, Expense, GoldItem, GoldPrice, Goal, GoalAllocation, Income, IncomeMonth, Lookup, Transfer, User, Workspace,
 } from '../models/index.js';
 
 export const BACKUP_APP = 'couple-finance-tracker';
@@ -25,6 +25,8 @@ const COLLECTIONS = {
   contributions: Contribution, // partners' shares of common bills sent to each other
   contracts: Contract, // rent contracts and their cheques
   deposits: Deposit,
+  goldItems: GoldItem,
+  goldPrices: GoldPrice,
 } as const satisfies Record<string, Model<any>>;
 type CollectionKey = keyof typeof COLLECTIONS;
 
@@ -100,6 +102,8 @@ const backupSchema = z.object({
     contributions: z.array(base.extend({ commitmentId: oid, fromUserId: oid, month: monthStr, date: dateStr, amount: num })).default([]),
     contracts: z.array(base.extend({ name: z.string(), startDate: dateStr, months: num, totalAmount: num })).default([]),
     deposits: z.array(base.extend({ name: z.string(), amount: num })).default([]),
+    goldItems: z.array(base.extend({ name: z.string(), grams: num })).default([]),
+    goldPrices: z.array(base.extend({ currency: z.string() })).default([]),
   }),
 });
 export type BackupFile = z.infer<typeof backupSchema>;

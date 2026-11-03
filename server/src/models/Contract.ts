@@ -46,6 +46,7 @@ const depositSchema = new Schema(
     workspaceId: { type: Schema.Types.ObjectId, ref: 'Workspace', required: true },
     name: { type: String, required: true, trim: true },
     amount: { type: Number, required: true, min: 0 },
+    currency: { type: String, default: 'AED' },
     type: { type: String, enum: ['personal', 'common'], required: true },
     ownerId: { type: Schema.Types.ObjectId, ref: 'User' },
     contractId: { type: Schema.Types.ObjectId, ref: 'Contract' },
