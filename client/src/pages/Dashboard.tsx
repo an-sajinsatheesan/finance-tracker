@@ -323,7 +323,7 @@ export default function Dashboard() {
           {isCouple && <Settlement members={c.members} support={c.support ?? []} name={memberName} />}
 
           {!isCommon && (
-            <CheckUpCard
+            <CheckUpCard compact
               title={`Money check-up · ${isCouple && scope !== user!.id ? memberName(scope) : 'You'}`}
               subtitle={`${monthLabel(month)} · own spending plus share of common bills`}
               result={checkUp({ income: c.incomeReceived, lines: data.budgetVsActual.filter((r) => r.actual > 0).map((r) => ({ category: r.category, amount: r.actual })), cash: cashOf(scope) })}
