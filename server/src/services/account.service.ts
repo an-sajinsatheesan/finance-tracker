@@ -242,7 +242,7 @@ async function loadLinkedMoney(workspaceId: string, accountIds: string[], month:
       status: i.status, accountId: linked(i.accountId),
     })),
     expenses: expenses.map((e) => ({
-      month: e.month, date: e.date, amount: e.amount, accountId: linked(e.accountId),
+      month: e.month, date: e.date, amount: e.amount, accountId: linked(e.accountId), paidOut: e.paidOut, paidOutDate: e.paidOutDate,
       shares: e.shares.map((s) => ({ userId: String(s.userId), amount: s.amount })),
     })),
     transfers: transfers

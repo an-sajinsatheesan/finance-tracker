@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Expenses from './pages/Expenses';
 import IncomePage from './pages/Income';
 import Commitments from './pages/Commitments';
+import CommonBills from './pages/CommonBills';
 import Goals from './pages/Goals';
 import Accounts from './pages/Accounts';
 import WealthPage from './pages/Wealth';
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="expenses/new" element={<Expenses openNew />} />
         <Route path="income" element={<IncomePage />} />
         <Route path="commitments" element={<Commitments />} />
+        <Route path="bills" element={<CommonBills />} />
         <Route path="accounts" element={<Accounts />} />
         <Route path="wealth" element={<WealthPage />} />
         <Route path="balances" element={<BalancesPage />} />

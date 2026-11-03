@@ -27,6 +27,13 @@ const expenseSchema = new Schema(
     settlesCommitment: { type: Boolean },
     /** Account the money left (optional); a credit card raises its outstanding balance. */
     accountId: { type: Schema.Types.ObjectId, ref: 'Account' },
+    /**
+     * A bill paid from the common account: false while the money still sits there (both
+     * shares are in, the provider isn't paid yet). Unset = paid out on `date`.
+     */
+    paidOut: { type: Boolean },
+    /** When the provider was actually paid (YYYY-MM-DD), if it differs from `date`. */
+    paidOutDate: { type: String },
     notes: { type: String, default: '' },
     status: { type: String, enum: ['active', 'archived'], default: 'active' },
     archivedAt: { type: Date },

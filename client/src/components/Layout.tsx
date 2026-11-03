@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LayoutGrid, ArrowLeftRight, Wallet, ReceiptText, Target, Settings, LogOut, CreditCard, Coins, Bell, Clock3, Users, Landmark, Menu, House, ChevronRight, X } from 'lucide-react';
+import { LayoutGrid, ArrowLeftRight, Wallet, ReceiptText, ClipboardCheck, Target, Settings, LogOut, CreditCard, Coins, Bell, Clock3, Users, Landmark, Menu, House, ChevronRight, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useApi } from '../lib/useApi';
 import type { Reminder } from '../lib/types';
@@ -16,6 +16,7 @@ const NAV_GROUPS = [
       { to: '/expenses', label: 'Expenses', icon: ArrowLeftRight },
       { to: '/income', label: 'Income', icon: Wallet },
       { to: '/commitments', label: 'Commitments', icon: ReceiptText },
+      { to: '/bills', label: 'Common bills', icon: ClipboardCheck },
     ],
   },
   {

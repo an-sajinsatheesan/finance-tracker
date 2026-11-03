@@ -16,6 +16,9 @@ type ExpenseInput = {
   /** Budget month when it differs from the date's month (next month's commitment paid early). */
   month?: string;
   settlesCommitment?: boolean;
+  /** false: from the common account, provider not paid yet. */
+  paidOut?: boolean;
+  paidOutDate?: string | null;
 };
 
 /**
@@ -72,6 +75,7 @@ export async function createExpense(workspaceId: string, userId: string, input: 
     commitmentId: input.commitmentId ?? undefined,
     settlesCommitment: input.commitmentId ? input.settlesCommitment : undefined,
     accountId: input.accountId || undefined,
+    paidOut: input.paidOut === false && input.accountId ? false : undefined,
     notes: input.notes ?? '',
     createdBy: userId,
   });
@@ -94,6 +98,11 @@ export async function updateExpense(workspaceId: string, id: string, input: Part
     doc.set('accountId', input.accountId || undefined);
   }
   if (input.amount !== undefined) doc.amount = round2(input.amount);
+  // Marking a common-account bill as paid to the provider (or back to not yet).
+  if (input.paidOut !== undefined) {
+    doc.set('paidOut', input.paidOut ? undefined : false);
+    doc.set('paidOutDate', input.paidOut ? input.paidOutDate || undefined : undefined);
+  } else if (input.paidOutDate !== undefined) doc.set('paidOutDate', input.paidOutDate || undefined);
   if (input.type) doc.type = input.type;
   if (dateChanged) doc.month = doc.date.slice(0, 7); // an early payment keeps its budget month while the date stays
   if (doc.category !== 'Custom') doc.customCategory = '';

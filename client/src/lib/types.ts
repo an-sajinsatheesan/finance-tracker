@@ -63,6 +63,8 @@ export interface Expense {
   _id: string; date: string; month: string; description: string; category: Category; customCategory: string;
   amount: number; paidBy: string; type: Kind; ownerId?: string; shares: { userId: string; amount: number }[];
   commitmentId?: string; notes: string; status: 'active' | 'archived';
+  /** A bill from the common account: false while the provider isn't paid yet. */
+  paidOut?: boolean; paidOutDate?: string;
   accountId?: string | null;
 }
 

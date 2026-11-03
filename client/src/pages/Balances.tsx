@@ -93,8 +93,29 @@ export default function BalancesPage() {
       </Row>
     </ColumnGroup>
   );
-  const savings = [...(data?.savings ?? [])].reverse(); // newest first
   const savedTone = (v: number) => (v < 0 ? 'text-rose-700' : 'text-emerald-700');
+  const savings = [...(data?.savings ?? [])].reverse(); // newest first
+  // Footer of the accounts table: bank accounts only (cards and loans hold what is owed).
+  const cashRows = accounts.filter((a) => a.group !== 'liability');
+  const cashTotals = {
+    opening: cashRows.reduce((s, a) => s + a.opening, 0), in: cashRows.reduce((s, a) => s + a.moneyIn, 0),
+    out: cashRows.reduce((s, a) => s + a.moneyOut, 0), closing: cashRows.reduce((s, a) => s + a.closing, 0),
+  };
+  const memberSum = (userId: string, k: 'income' | 'spent' | 'saved') => savings.reduce((s, x) => s + (x.members.find((y) => y.userId === userId)?.[k] ?? 0), 0);
+  const savingsFooter = (
+    <ColumnGroup>
+      <Row>
+        <Column footer="Total" />
+        {members.flatMap((m) => [
+          <Column key={`${m.userId}-i`} align="right" footer={<span className="num text-emerald-700">{moneyIn(memberSum(m.userId, 'income'), base)}</span>} />,
+          <Column key={`${m.userId}-s`} align="right" footer={<span className="num text-rose-600">{moneyIn(memberSum(m.userId, 'spent'), base)}</span>} />,
+          <Column key={`${m.userId}-v`} align="right" footer={<span className={cx('num font-semibold', savedTone(memberSum(m.userId, 'saved')))}>{moneyIn(memberSum(m.userId, 'saved'), base)}</span>} />,
+        ])}
+        {isCouple && <Column align="right" footer={<span className={cx('num font-semibold', savedTone(savings.reduce((s, x) => s + x.saved, 0)))}>{moneyIn(savings.reduce((s, x) => s + x.saved, 0), base)}</span>} />}
+        <Column align="right" footer={<span className="num font-semibold">{moneyIn(savings[0]?.cumulative ?? 0, base)}</span>} />
+      </Row>
+    </ColumnGroup>
+  );
 
   return (
     <Page fill>
@@ -178,7 +199,7 @@ export default function BalancesPage() {
             </div>
             {activeView === 'accounts' && (
             <DataTable value={accounts} dataKey="id" size="small" tableStyle={{ minWidth: '52rem' }} {...accountPaging}>
-              <Column header="Account" body={(a: BalanceAccount) => (
+              <Column header="Account" footer={<span className="font-semibold">Total{accounts.some((a) => a.group === 'liability') ? ' (bank accounts, without cards and loans)' : ''}</span>} body={(a: BalanceAccount) => (
                 <div className="flex items-center gap-3">
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><CreditCard className="size-4" /></span>
                   <div className="min-w-0">
@@ -188,10 +209,10 @@ export default function BalancesPage() {
                 </div>
               )} />
               {isCouple && <Column header="Owner" body={(a: BalanceAccount) => a.type === 'common' ? <Badge tone="violet">Common</Badge> : <span className="text-xs text-stone-600">{memberName(a.ownerId)}</span>} />}
-              <Column header="Start of month" align="right" body={(a: BalanceAccount) => <span className="num text-stone-500">{moneyIn(a.opening, a.currency)}</span>} />
-              <Column header="Money in" align="right" body={(a: BalanceAccount) => a.moneyIn ? <span className="num text-emerald-700">+{moneyIn(a.moneyIn, a.currency)}</span> : <span className="text-stone-300">—</span>} />
-              <Column header="Money out" align="right" body={(a: BalanceAccount) => a.moneyOut ? <span className="num text-rose-700">−{moneyIn(a.moneyOut, a.currency)}</span> : <span className="text-stone-300">—</span>} />
-              <Column header="End of month" align="right" body={(a: BalanceAccount) => (
+              <Column header={`Start of ${monthLabel(month, 'short')}`} align="right" footer={<span className="num">{moneyIn(cashTotals.opening, cur)}</span>} body={(a: BalanceAccount) => <span className="num text-stone-500">{moneyIn(a.opening, a.currency)}</span>} />
+              <Column header="Money in" headerTooltip="Salary and income received, transfers and shares moved in" align="right" footer={<span className="num text-emerald-700">+{moneyIn(cashTotals.in, cur)}</span>} body={(a: BalanceAccount) => a.moneyIn ? <span className="num text-emerald-700">+{moneyIn(a.moneyIn, a.currency)}</span> : <span className="text-stone-300">—</span>} />
+              <Column header="Money out" headerTooltip="Expenses and bills paid from it, transfers moved out (bills not yet paid to the provider stay in)" align="right" footer={<span className="num text-rose-700">−{moneyIn(cashTotals.out, cur)}</span>} body={(a: BalanceAccount) => a.moneyOut ? <span className="num text-rose-700">−{moneyIn(a.moneyOut, a.currency)}</span> : <span className="text-stone-300">—</span>} />
+              <Column header={`End of ${monthLabel(month, 'short')}`} align="right" footer={<span className="num font-semibold">{moneyIn(cashTotals.closing, cur)}</span>} body={(a: BalanceAccount) => (
                 <div>
                   <span className={cx('num font-semibold', a.closing < 0 && 'text-rose-700')}>{moneyIn(a.closing, a.currency)}</span>
                   <div className="text-[10px] text-stone-400">{a.group === 'liability' ? 'owed · ' : ''}{a.recorded ? 'recorded' : 'calculated'}</div>
@@ -226,13 +247,13 @@ export default function BalancesPage() {
 
             {activeView === 'savings' && (
             <DataTable
-              value={savings} dataKey="month" size="small" headerColumnGroup={savingsHeader} tableStyle={{ minWidth: isCouple ? '60rem' : '32rem' }} {...savingsPaging}
+              value={savings} dataKey="month" size="small" headerColumnGroup={savingsHeader} footerColumnGroup={savings.length > 0 ? savingsFooter : undefined} tableStyle={{ minWidth: isCouple ? '60rem' : '32rem' }} {...savingsPaging}
               emptyMessage={<p className="px-3 py-6 text-center text-xs text-stone-500">No months to show yet.</p>}
             >
               <Column body={(s: Saving) => <span className="font-medium">{monthLabel(s.month, 'short')}</span>} />
               {members.flatMap((m) => [
-                <Column key={`${m.userId}-i`} align="right" body={(s: Saving) => <Money value={s.members.find((x) => x.userId === m.userId)?.income ?? 0} className="text-stone-600" />} />,
-                <Column key={`${m.userId}-s`} align="right" body={(s: Saving) => <Money value={s.members.find((x) => x.userId === m.userId)?.spent ?? 0} className="text-stone-600" />} />,
+                <Column key={`${m.userId}-i`} align="right" body={(s: Saving) => <Money value={s.members.find((x) => x.userId === m.userId)?.income ?? 0} className="text-emerald-700" />} />,
+                <Column key={`${m.userId}-s`} align="right" body={(s: Saving) => <Money value={s.members.find((x) => x.userId === m.userId)?.spent ?? 0} className="text-rose-600" />} />,
                 <Column key={`${m.userId}-v`} align="right" body={(s: Saving) => {
                   const v = s.members.find((x) => x.userId === m.userId)?.saved ?? 0;
                   return <span className={cx('num font-semibold', savedTone(v))}>{moneyIn(v, base)}</span>;

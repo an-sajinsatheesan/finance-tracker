@@ -187,6 +187,7 @@ export default function Expenses({ openNew = false }: { openNew?: boolean }) {
                     </span>
                   )}
                 {fromAccount(e)}
+                {e.paidOut === false && <span className="text-amber-700">Still in the account · provider not paid yet</span>}
                 {sent.map((x) => (
                   <span key={x.id} className="text-sky-700">↗ {memberName(x.fromUserId)} sent <Money value={x.amount} /> to {x.toUserId ? memberName(x.toUserId) : 'common account'}</span>
                 ))}

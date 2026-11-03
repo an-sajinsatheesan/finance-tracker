@@ -205,7 +205,7 @@ export async function payCommitment(
   workspaceId: string,
   userId: string,
   id: string,
-  input: { month: string; date?: string; paidBy?: string; amount?: number; accountId?: string | null; settles?: boolean },
+  input: { month: string; date?: string; paidBy?: string; amount?: number; accountId?: string | null; settles?: boolean; paidOut?: boolean },
 ) {
   // Next month's bills can be paid early (e.g. rent on the 31st): dated today, counted in their own month.
   const early = input.month === addMonths(currentMonth(), 1);
@@ -239,6 +239,7 @@ export async function payCommitment(
     accountId: input.accountId,
     month: input.month,
     settlesCommitment: settles,
+    paidOut: input.paidOut,
   });
 }
 

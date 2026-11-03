@@ -8,7 +8,7 @@ import { dateInMonth, money, monthLabel, thisMonth, todayStr } from '../lib/form
 import { useAuth } from '../context/AuthContext';
 import { useLookups } from '../context/LookupContext';
 import {
-  Button, DateInput, ErrorNote, Field, Modal, MonthInput, NumberInput, Select, Tabs, TextInput, cx, useToast, type Option,
+  Button, Check, DateInput, ErrorNote, Field, Modal, MonthInput, NumberInput, Select, Tabs, TextInput, cx, useToast, type Option,
 } from './ui';
 
 /** Last day an expense may be dated: the end of the current month (no advance expenses). */
@@ -508,6 +508,7 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
   const { user, isCouple, workspace, memberName } = useAuth();
   const { label } = useLookups();
   const [settles, setSettles] = useState(false);
+  const [paidOut, setPaidOut] = useState(true);
   const toast = useToast();
   const accounts = useApi<Account[]>(target ? '/accounts' : null);
   const [mode, setMode] = useState<PayMode>('pay');
@@ -543,6 +544,7 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
     // A bill your partner already paid in full: all that's left is sending them your share.
     setMode(target.payment?.paid && target.type === 'common' && target.shares ? 'send' : 'pay');
     setSettles(false);
+    setPaidOut(true);
     setAccountId('');
     const dueDate = dateInMonth(month, target.dueDay ?? 1);
     setDate(early || todayStr().startsWith(month) ? todayStr() : dueDate <= maxDate ? dueDate : maxDate);
@@ -554,6 +556,7 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
   // Paying your partner's personal commitment is support: the cost is yours (not owed back).
   const supporting = isCouple && target?.type === 'personal' && !!target.ownerId && paidBy !== target.ownerId;
   const sending = shared && mode === 'send';
+  const fromCommonAccount = !!accountId && (accounts.data ?? []).find((a) => a.id === accountId)?.type === 'common';
 
   // Where a share can go: the partner (any or a chosen account of theirs) or a joint account.
   const sendOptions: Option[] = [
@@ -592,7 +595,9 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
     setBusy(true);
     try {
       const final = short ? settles : true;
-      await api.post(`/commitments/${target.id}/pay`, { month, paidBy, amount, date, accountId: accountId || null, settles: final });
+      await api.post(`/commitments/${target.id}/pay`, {
+        month, paidBy, amount, date, accountId: accountId || null, settles: final, ...(fromCommonAccount && !paidOut && { paidOut: false }),
+      });
       toast.success(final ? `${target.title} paid for ${monthLabel(month)}` : `${money(amount)} paid towards ${target.title} · ${money(remaining - amount)} left`);
       setLastId(null);
       onPaid();
@@ -665,6 +670,14 @@ export function PayCommitmentModal({ target, month, onClose, onPaid }: {
             <Field label="Paid from" hint="Optional. Keeps the account balance up to date.">
               <AccountSelect accounts={accounts.data} value={accountId} onChange={setAccountId} ownerId={paidBy} purpose="out" />
             </Field>
+            {fromCommonAccount && (
+              <div className="rounded-xl border border-stone-200 px-3 py-2">
+                <Check checked={paidOut} onChange={setPaidOut} label="The provider is already paid" />
+                <p className="mt-1 text-[11px] text-stone-500">
+                  Untick while the money is still in the common account. Mark it paid on the Common bills page when it goes out.
+                </p>
+              </div>
+            )}
           </>
         )}
         <ErrorNote message={error} />

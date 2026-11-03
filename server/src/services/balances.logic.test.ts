@@ -72,6 +72,14 @@ describe('calculated balances', () => {
     expect(r.savings.find((s) => s.month === '2026-10')!.members.find((m) => m.userId === 'u1')!.spent).toBe(1000 + 1500 + 400);
   });
 
+  it('keeps a common-account bill in the account until the provider is paid', () => {
+    const bill = { month: '2026-10', date: '2026-10-01', amount: 600, accountId: 'joint', shares: [{ userId: 'u1', amount: 300 }, { userId: 'u2', amount: 300 }] };
+    const pending = computeBalances({ ...base, expenses: [...base.expenses, { ...bill, paidOut: false }] });
+    expect(pending.accounts.find((a) => a.id === 'joint')).toMatchObject({ moneyOut: 3000, closing: 1000 });
+    const paid = computeBalances({ ...base, expenses: [...base.expenses, { ...bill, paidOutDate: '2026-10-20' }] });
+    expect(paid.accounts.find((a) => a.id === 'joint')).toMatchObject({ moneyOut: 3600, closing: 400 });
+  });
+
   it('raises a credit card balance when it pays for something', () => {
     expect(row('card').closing).toBe(400);
   });

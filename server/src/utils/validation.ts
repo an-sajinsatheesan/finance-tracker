@@ -134,6 +134,8 @@ export const commitmentPaySchema = z.object({
   accountId: objectId.optional().nullable(),
   /** true: this payment completes the month even if smaller; false: part of it (the rest comes later). */
   settles: z.boolean().optional(),
+  /** false: recorded from the common account but the provider isn't paid yet. */
+  paidOut: z.boolean().optional(),
 });
 
 /** A partner's share of a common commitment sent to the partner who pays it, or into a joint account. */
@@ -174,6 +176,9 @@ export const expenseUpdateSchema = z.object({
   ownerId: objectId.optional().nullable(),
   notes: text(500).optional(),
   accountId: objectId.optional().nullable(),
+  /** Bill paid from the common account: has the provider been paid yet, and when. */
+  paidOut: z.boolean().optional(),
+  paidOutDate: date.optional().nullable(),
 });
 
 export const goalCreateSchema = z

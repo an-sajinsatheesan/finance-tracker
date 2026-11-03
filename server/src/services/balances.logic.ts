@@ -16,7 +16,11 @@ export interface FlowIncome {
   userId: string; month: string; receivedDate?: string | null; receivedAmount: number; status: string; accountId?: string | null;
 }
 /** `month` is the budget month; `date` is when the money left (next month's bill paid early). */
-export interface FlowExpense { month: string; date?: string; amount: number; accountId?: string | null; shares: { userId: string; amount: number }[] }
+export interface FlowExpense {
+  month: string; date?: string; amount: number; accountId?: string | null; shares: { userId: string; amount: number }[];
+  /** false: still in the account (provider not paid yet); `paidOutDate`: when it actually left. */
+  paidOut?: boolean | null; paidOutDate?: string | null;
+}
 /** Either side may be missing for a partner's share sent without both accounts chosen. */
 export interface FlowTransfer { month: string; fromAccountId?: string | null; toAccountId?: string | null; amount: number; toAmount: number; fee?: number }
 
@@ -53,7 +57,11 @@ export function indexFlows(incomes: FlowIncome[], expenses: FlowExpense[], trans
   for (const i of incomes) {
     if (i.accountId && i.status !== 'archived' && i.receivedAmount > 0) add(i.accountId, cashMonth(i), 'in', i.receivedAmount);
   }
-  for (const e of expenses) if (e.accountId) add(e.accountId, e.date ? e.date.slice(0, 7) : e.month, 'out', e.amount);
+  for (const e of expenses) {
+    if (!e.accountId || e.paidOut === false) continue;
+    const left = e.paidOutDate ?? e.date;
+    add(e.accountId, left ? left.slice(0, 7) : e.month, 'out', e.amount);
+  }
   for (const t of transfers) {
     if (t.fromAccountId) add(t.fromAccountId, t.month, 'out', t.amount + (t.fee ?? 0));
     if (t.toAccountId) add(t.toAccountId, t.month, 'in', t.toAmount);
