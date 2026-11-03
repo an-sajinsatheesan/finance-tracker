@@ -20,7 +20,7 @@ import { ProgressSpinner } from 'primereact/progressspinner';
 import { Toast } from 'primereact/toast';
 import { confirmDialog } from 'primereact/confirmdialog';
 import { AlertCircle, Wallet } from 'lucide-react';
-import { money } from '../lib/format';
+import { money, moneyIn } from '../lib/format';
 
 export function cx(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(' ');
@@ -96,7 +96,7 @@ export function StatRail({ items, className }: { items: RailItem[]; className?: 
             <span className="truncate">{s.label}</span>
           </div>
           <div className={cx('num mt-1.5 truncate text-lg font-semibold tracking-tight', s.tone ?? (s.value < 0 ? 'text-rose-700' : 'text-stone-900'))}>
-            <span className="mr-1 text-xs font-medium text-stone-400">{s.currency ?? 'AED'}</span>{money(s.value)}
+            <span className="mr-1 text-xs font-medium text-stone-400">{s.currency ?? 'AED'}</span>{moneyIn(s.value, s.currency ?? 'AED')}
           </div>
           {s.sub && <div className="mt-0.5 truncate text-[11px] text-stone-500">{s.sub}</div>}
         </div>
