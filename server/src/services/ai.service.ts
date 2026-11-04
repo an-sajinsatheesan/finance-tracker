@@ -8,8 +8,13 @@ export interface ChatMessage { role: 'user' | 'assistant'; content: string }
 
 /** Older messages are dropped so that a long chat doesn't keep getting more expensive. */
 const HISTORY = 10;
-/** Covers the model's hidden reasoning as well as the visible reply; too low a cap leaves the reply empty. */
-const MAX_REPLY_TOKENS = 4000;
+/**
+ * Covers the model's hidden reasoning as well as the visible reply. At high reasoning a long question
+ * spent 4000 tokens (about 40 seconds) without writing anything, so reasoning is kept low, and the cap
+ * stays small enough to finish before the serverless time limit.
+ */
+const MAX_REPLY_TOKENS = 5000;
+const REASONING_EFFORT = 'low';
 
 const INSTRUCTIONS = `You are the money assistant inside a household finance tracker. You help the person understand their own numbers and plan monthly budgets and savings.
 
@@ -49,6 +54,7 @@ export async function chat(workspaceId: string, userId: string, messages: ChatMe
       body: JSON.stringify({
         model: env.openaiModel,
         max_completion_tokens: MAX_REPLY_TOKENS,
+        reasoning_effort: REASONING_EFFORT,
         messages: [
           // Fixed text first: OpenAI bills a repeated start of a prompt at a lower rate.
           { role: 'system', content: `${INSTRUCTIONS}\n\nYou are talking to ${me?.displayName ?? 'a member'}.\n\nDATA:\n${JSON.stringify(data)}` },
