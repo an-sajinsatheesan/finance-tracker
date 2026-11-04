@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import Markdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Send, Sparkles, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api, errorText } from '../lib/api';
@@ -17,10 +19,11 @@ const SUGGESTIONS = [
 const load = (key: string): Message[] => { try { return JSON.parse(sessionStorage.getItem(key) ?? '[]'); } catch { return []; } };
 const save = (key: string, m: Message[]) => { try { sessionStorage.setItem(key, JSON.stringify(m)); } catch { /* ignore */ } };
 
-/** Replies are plain text, but models still like **bold**. */
-function Text({ value }: { value: string }) {
-  return <>{value.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? <b key={i}>{part}</b> : part))}</>;
-}
+/** Headings, lists and tables in a reply. Raw HTML in it is shown as text, never run; links open in a new tab. */
+const REPLY_PARTS: Components = {
+  table: ({ children }) => <div className="scroll-thin overflow-x-auto"><table>{children}</table></div>,
+  a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+};
 
 export default function Chat() {
   const { user } = useAuth();
@@ -30,8 +33,14 @@ export default function Chat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const end = useRef<HTMLDivElement>(null);
+  const latest = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { save(key, messages); end.current?.scrollIntoView({ block: 'end' }); }, [key, messages, busy]);
+  // A new reply opens at its first line, so a long answer can be read from the top.
+  useEffect(() => {
+    save(key, messages);
+    if (!busy && messages[messages.length - 1]?.role === 'assistant') latest.current?.scrollIntoView({ block: 'start' });
+    else end.current?.scrollIntoView({ block: 'end' });
+  }, [key, messages, busy]);
 
   async function send(text: string) {
     const content = text.trim();
@@ -64,7 +73,7 @@ export default function Chat() {
         actions={messages.length > 0 && <Button size="sm" onClick={() => { setMessages([]); setError(null); }} icon={<Trash2 className="size-3.5" />}>Clear chat</Button>}
       />
       <div className="card flex min-h-[24rem] flex-1 flex-col overflow-hidden">
-        <div className="scroll-thin min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+        <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 py-6">
           {messages.length === 0 && (
             <div className="mx-auto max-w-md py-8 text-center">
               <Sparkles className="mx-auto size-6 text-brand-700" />
@@ -74,15 +83,18 @@ export default function Chat() {
               </div>
             </div>
           )}
-          {messages.map((m, i) => (
-            <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-              <div className={`max-w-[85%] whitespace-pre-wrap break-words rounded-xl px-3 py-2 text-sm ${m.role === 'user' ? 'bg-brand-600 text-white' : 'bg-stone-100 text-stone-800'}`}>
-                <Text value={m.content} />
-              </div>
-            </div>
-          ))}
-          {busy && <div className="flex justify-start"><div className="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-500">Thinking…</div></div>}
-          <div ref={end} />
+          <div className="mx-auto w-full max-w-3xl space-y-6">
+            {messages.map((m, i) => (m.role === 'user'
+              ? (
+                <div key={i} className="flex justify-end">
+                  <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-stone-100 px-4 py-2.5 text-sm leading-6 text-stone-900">{m.content}</div>
+                </div>
+              )
+              : <div key={i} ref={i === messages.length - 1 ? latest : undefined} className="chat-reply"><Markdown remarkPlugins={[remarkGfm]} components={REPLY_PARTS}>{m.content}</Markdown></div>
+            ))}
+            {busy && <div className="text-sm text-stone-500">Thinking…</div>}
+            <div ref={end} />
+          </div>
         </div>
         <form onSubmit={submit} className="space-y-2 border-t border-stone-100 p-3">
           <ErrorNote message={error} />
