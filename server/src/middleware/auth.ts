@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { AppError } from '../utils/AppError.js';
+import { issuedBeforePasswordChange } from '../utils/token.js';
 import { userRepository } from '../repositories/workspace.repository.js';
 
 export interface AuthUser {
@@ -35,6 +36,7 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
     const user = await userRepository.findById(String(payload.sub));
     if (!user || user.status !== 'active') throw new AppError(401, 'Account not available');
     if (String(user.workspaceId) !== String(payload.wid)) throw new AppError(401, 'Workspace mismatch');
+    if (issuedBeforePasswordChange(payload, user.passwordChangedAt)) throw new AppError(401, 'Session expired, please sign in again');
     req.user = {
       id: String(user._id),
       workspaceId: String(user.workspaceId),

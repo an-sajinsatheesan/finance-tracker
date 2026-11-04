@@ -48,8 +48,9 @@ export const env = {
   /** Shared secret for the scheduled reminder endpoint (Vercel Cron sends it as a Bearer token). */
   get cronSecret() { return process.env.CRON_SECRET ?? ''; },
   get allowRegistration() { return process.env.ALLOW_REGISTRATION !== 'false'; },
-  /** Admin panel sign-in (user control). Without ADMIN_PASSWORD the admin panel is switched off. */
-  get adminUsername() { return (process.env.ADMIN_USERNAME ?? 'admin').toLowerCase(); },
-  get adminPassword() { return process.env.ADMIN_PASSWORD ?? ''; },
+  /** AI chat. Without OPENAI_API_KEY the chat page says it isn't set up. */
+  get openaiApiKey() { return process.env.OPENAI_API_KEY ?? ''; },
+  get openaiModel() { return process.env.OPENAI_MODEL ?? 'gpt-6-luna'; },
+  get aiDailyLimit() { return Number(process.env.AI_DAILY_LIMIT ?? 30); },
   get backupDir() { return process.env.BACKUP_DIR ?? path.resolve(process.cwd(), 'backups'); },
 };

@@ -29,7 +29,7 @@ export const publicUser = (u: UserLike) => ({
   workspaceId: String(u.workspaceId),
 });
 
-const DUMMY_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEeO7Z6Z6eYvF1E5j6hLkC0G9rZsY3b6y2W';
+export const DUMMY_HASH ='$2a$12$C6UzMDM.H6dfI/f/IKcEeO7Z6Z6eYvF1E5j6hLkC0G9rZsY3b6y2W';
 
 /** Signs in with email (or, for older accounts, username). */
 export async function login(identifier: string, password: string) {

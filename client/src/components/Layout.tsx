@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LayoutGrid, ArrowLeftRight, Wallet, ReceiptText, ClipboardCheck, FileText, BarChart3, TrendingUp, HandCoins, Target, Settings, LogOut, CreditCard, Coins, Bell, Clock3, Users, Landmark, Menu, House, ChevronRight, X } from 'lucide-react';
+import { LayoutGrid, ArrowLeftRight, Wallet, ReceiptText, ClipboardCheck, FileText, BarChart3, TrendingUp, HandCoins, Target, Settings, LogOut, CreditCard, Coins, Bell, Clock3, Users, Landmark, Menu, House, ChevronRight, Sparkles, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useApi } from '../lib/useApi';
 import type { Reminder } from '../lib/types';
@@ -34,7 +34,10 @@ const NAV_GROUPS = [
   },
   {
     title: 'Other',
-    items: [{ to: '/settings', label: 'Settings', icon: Settings }],
+    items: [
+      { to: '/chat', label: 'AI assistant', icon: Sparkles },
+      { to: '/settings', label: 'Settings', icon: Settings },
+    ],
   },
 ];
 const NAV = NAV_GROUPS.flatMap((g) => g.items);

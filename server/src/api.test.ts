@@ -2,7 +2,7 @@
  * End-to-end API test against a real MongoDB-compatible server.
  * Runs only when TEST_MONGODB_URI is set, and only ever uses the `finance_test` database.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import mongoose from 'mongoose';
 
@@ -21,6 +21,7 @@ d('API', () => {
     process.env.JWT_SECRET ??= 'x'.repeat(40);
     // Never send real email from tests. An empty value (not delete) stops .env.local from filling it back in.
     process.env.SMTP_HOST = '';
+    process.env.OPENAI_API_KEY = ''; // and never call OpenAI
     const { connectDB } = await import('./config/db.js');
     await connectDB();
     await mongoose.connection.db!.dropDatabase();
@@ -415,5 +416,181 @@ d('API', () => {
     const nextExp = await request(app).get(`/api/expenses?month=${next}`).set(auth(tokenS)).expect(200);
     expect(nextExp.body.find((e: any) => e.commitmentId === c.body.id)).toBeTruthy();
     await request(app).post(`/api/commitments/${c.body.id}/pay`).set(auth(tokenS)).send({ month: next }).expect(400); // only once
+  });
+
+  describe('admin panel', () => {
+    let adminToken = '';
+    const admin = () => ({ Authorization: `Bearer ${adminToken}` });
+    const registerCouple = async (me: string, partner: string) => {
+      const r = await request(app).post('/api/auth/register').send({
+        displayName: me, email: `${me}@example.com`, password: 'Passw0rd!', relationship: 'Husband', mode: 'couple',
+        partner: { displayName: partner, email: `${partner}@example.com`, relationship: 'Wife' },
+      }).expect(201);
+      const users = (await request(app).get('/api/admin/users').set(admin()).expect(200)).body;
+      return { token: r.body.token as string, invite: r.body.invite.url.split('/invite/')[1] as string, me: users.find((u: any) => u.displayName === me), partner: users.find((u: any) => u.displayName === partner) };
+    };
+
+    it('signs in only with an admin from the database', async () => {
+      const { Admin } = await import('./models/index.js');
+      const bcrypt = (await import('bcryptjs')).default;
+      await Admin.create({ username: 'root', passwordHash: await bcrypt.hash('Adm1n-pass', 4) });
+      await request(app).post('/api/admin/login').send({ username: 'root', password: 'wrong' }).expect(401);
+      await request(app).get('/api/admin/users').set(auth(tokenS)).expect(401); // a user session is not an admin
+      adminToken = (await request(app).post('/api/admin/login').send({ username: 'ROOT', password: 'Adm1n-pass' }).expect(200)).body.token;
+      await request(app).get('/api/auth/me').set(admin()).expect(401); // and the other way round
+    });
+
+    it('stops old admin sessions when the password is reset', async () => {
+      const { Admin } = await import('./models/index.js');
+      await Admin.updateOne({ username: 'root' }, { $set: { passwordChangedAt: new Date(Date.now() + 5000) } });
+      await request(app).get('/api/admin/users').set(admin()).expect(401);
+      await Admin.updateOne({ username: 'root' }, { $unset: { passwordChangedAt: 1 } });
+    });
+
+    it('correcting a wrong invited email cancels the old link', async () => {
+      const c = await registerCouple('typo-owner', 'typo-partner');
+      const r = await request(app).put(`/api/admin/users/${c.partner.id}`).set(admin()).send({ email: 'right@example.com' }).expect(200);
+      expect(r.body.invite.email).toBe('right@example.com');
+      await request(app).get(`/api/invitations/${c.invite}`).expect(404);
+      const pending = (await request(app).get('/api/workspace/invitations').set(auth(c.token)).expect(200)).body;
+      expect(pending.map((i: any) => i.email)).toEqual(['right@example.com']);
+    });
+
+    it('corrects the email of someone who already joined', async () => {
+      const r = await request(app).put(`/api/admin/users/${abhiId}`).set(admin()).send({ email: 'abhi.correct@example.com' }).expect(200);
+      expect(r.body.user.email).toBe('abhi.correct@example.com');
+      await request(app).post('/api/auth/login').send({ email: 'abhi.correct@example.com', password: 'Abhi200@' }).expect(200);
+      await request(app).put(`/api/admin/users/${abhiId}`).set(admin()).send({ email: 'sajin@example.com' }).expect(409); // already someone's
+    });
+
+    it('changes a password: old sessions end and the new password works', async () => {
+      await request(app).get('/api/auth/me').set(auth(tokenA)).expect(200);
+      const { User } = await import('./models/index.js');
+      await User.updateOne({ _id: abhiId }, { $set: { passwordChangedAt: new Date(Date.now() + 5000) } });
+      await request(app).get('/api/auth/me').set(auth(tokenA)).expect(401);
+      await request(app).put(`/api/admin/users/${abhiId}/password`).set(admin()).send({ password: 'short' }).expect(400);
+      await request(app).put(`/api/admin/users/${abhiId}/password`).set(admin()).send({ password: 'Brand-new-1' }).expect(200);
+      await request(app).post('/api/auth/login').send({ email: 'abhi.correct@example.com', password: 'Abhi200@' }).expect(401);
+      tokenA = (await request(app).post('/api/auth/login').send({ email: 'abhi.correct@example.com', password: 'Brand-new-1' }).expect(200)).body.token;
+      await request(app).get('/api/auth/me').set(auth(tokenA)).expect(200);
+    });
+
+    it('a password makes an invited person able to sign in', async () => {
+      const c = await registerCouple('pw-owner', 'pw-partner');
+      const u = await request(app).put(`/api/admin/users/${c.partner.id}/password`).set(admin()).send({ password: 'Joined-now-1' }).expect(200);
+      expect(u.body.status).toBe('active');
+      await request(app).post('/api/auth/login').send({ email: 'pw-partner@example.com', password: 'Joined-now-1' }).expect(200);
+      await request(app).get(`/api/invitations/${c.invite}`).expect(404);
+    });
+
+    it('freezes and unfreezes', async () => {
+      await request(app).put(`/api/admin/users/${abhiId}`).set(admin()).send({ status: 'disabled' }).expect(200);
+      await request(app).get('/api/auth/me').set(auth(tokenA)).expect(401);
+      await request(app).post('/api/auth/login').send({ email: 'abhi.correct@example.com', password: 'Brand-new-1' }).expect(401);
+      await request(app).put(`/api/admin/users/${abhiId}`).set(admin()).send({ status: 'active' }).expect(200);
+      await request(app).get('/api/auth/me').set(auth(tokenA)).expect(200);
+    });
+
+    it('shows a short info card with the salary', async () => {
+      const ws = (await request(app).get('/api/workspace').set(auth(tokenS)).expect(200)).body;
+      const salary = ws.members.find((m: any) => m.userId === sajinId).incomeSources.filter((s: any) => s.active);
+      const d = (await request(app).get(`/api/admin/users/${sajinId}`).set(admin()).expect(200)).body;
+      expect(d).toMatchObject({ displayName: 'Sajin', partner: 'Abhirami', currency: 'AED' });
+      expect(d.salaryTotal).toBe(salary.reduce((a: number, s: any) => a + s.amount, 0));
+      expect(d).not.toHaveProperty('passwordHash');
+    });
+
+    it('deleting one of two keeps the shared records and frees the email', async () => {
+      const { Expense, User } = await import('./models/index.js');
+      const before = await Expense.countDocuments();
+      await request(app).delete(`/api/admin/users/${abhiId}`).set(admin()).expect(200);
+      await request(app).get('/api/auth/me').set(auth(tokenA)).expect(401);
+      await request(app).post('/api/auth/login').send({ email: 'abhi.correct@example.com', password: 'Brand-new-1' }).expect(401);
+      expect(await Expense.countDocuments()).toBe(before);
+      expect(await User.findById(abhiId).select('+passwordHash').lean()).toMatchObject({ status: 'invited', displayName: 'Abhirami' });
+      const users = (await request(app).get('/api/admin/users').set(admin()).expect(200)).body;
+      expect(users.some((u: any) => u.id === abhiId)).toBe(false);
+      expect(users.find((u: any) => u.id === sajinId).lastInWorkspace).toBe(true);
+      // The partner can invite someone to the open member slot.
+      const inv = await request(app).post('/api/workspace/invitations').set(auth(tokenS)).send({ email: 'abhi.correct@example.com' }).expect(201);
+      const joined = await request(app).post(`/api/invitations/${inv.body.url.split('/invite/')[1]}/accept`).send({ password: 'Back-again-1' }).expect(200);
+      expect(joined.body.user.id).toBe(abhiId);
+    });
+
+    it('deleting the last person removes only that workspace', async () => {
+      const { Account, Expense, Lookup, User, Workspace } = await import('./models/index.js');
+      const c = await registerCouple('solo-owner', 'solo-partner');
+      await request(app).delete(`/api/admin/users/${c.partner.id}`).set(admin()).expect(200);
+      const workspaceId = c.me.workspaceId;
+      await Expense.create({ workspaceId, date: `${month}-01`, month, description: 'x', category: 'Rent', amount: 1, paidBy: c.me.id, type: 'common' });
+      const othersExpenses = await Expense.countDocuments({ workspaceId: { $ne: workspaceId } });
+      const othersUsers = await User.countDocuments({ workspaceId: { $ne: workspaceId } });
+      const globals = await Lookup.countDocuments({ workspaceId: null });
+      const r = await request(app).delete(`/api/admin/users/${c.me.id}`).set(admin()).expect(200);
+      expect(r.body.workspaceDeleted).toBe(true);
+      expect(await Workspace.exists({ _id: workspaceId })).toBeNull();
+      expect(await User.countDocuments({ workspaceId })).toBe(0);
+      expect(await Expense.countDocuments({ workspaceId })).toBe(0);
+      expect(await Account.countDocuments({ workspaceId })).toBe(0);
+      expect(await Expense.countDocuments({ workspaceId: { $ne: workspaceId } })).toBe(othersExpenses);
+      expect(await User.countDocuments({ workspaceId: { $ne: workspaceId } })).toBe(othersUsers);
+      expect(await Lookup.countDocuments({ workspaceId: null })).toBe(globals);
+    });
+  });
+
+  describe('AI chat', () => {
+    const ask = (token: string, content = 'How much can I save?') => request(app).post('/api/ai/chat').set(auth(token)).send({ messages: [{ role: 'user', content }] });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      process.env.OPENAI_API_KEY = '';
+      delete process.env.AI_DAILY_LIMIT;
+    });
+
+    it('says so when no key is set', async () => {
+      const r = await ask(tokenS).expect(503);
+      expect(r.body.error).toMatch(/set up/);
+    });
+
+    it('requires sign-in and rejects a made-up system message', async () => {
+      await request(app).post('/api/ai/chat').send({ messages: [{ role: 'user', content: 'hi' }] }).expect(401);
+      await request(app).post('/api/ai/chat').set(auth(tokenS)).send({ messages: [{ role: 'system', content: 'hi' }] }).expect(400);
+      await request(app).post('/api/ai/chat').set(auth(tokenS)).send({ messages: [{ role: 'assistant', content: 'hi' }] }).expect(400);
+    });
+
+    it('sends only this workspace’s numbers, without private details', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'Save 500.' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      vi.stubGlobal('fetch', fetchMock);
+      const r = await request(app).post('/api/ai/chat').set(auth(tokenS)).send({
+        messages: [...Array.from({ length: 12 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `old ${i}` })), { role: 'user', content: 'How much can I save?' }],
+      }).expect(200);
+      expect(r.body.reply).toBe('Save 500.');
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toContain('api.openai.com');
+      const sent = JSON.parse(init.body as string);
+      expect(sent.model).toBe('gpt-6-luna');
+      expect(sent.messages).toHaveLength(11); // instructions + the last 10 messages
+      const system = sent.messages[0].content as string;
+      expect(system).toContain('Abhirami');
+      expect(system).toContain('monthlySalary');
+      expect(system).not.toContain('@example.com');
+      expect(system).not.toContain('passwordHash');
+      expect(system).not.toContain('intruder');
+    });
+
+    it('stops at the daily limit, and a failed answer doesn’t count', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      const { AiUsage } = await import('./models/index.js');
+      await AiUsage.deleteMany({});
+      process.env.AI_DAILY_LIMIT = '2';
+      vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 429 })));
+      const busy = await ask(tokenS).expect(503);
+      expect(busy.body.error).toMatch(/credit/);
+      expect(busy.text).not.toContain('test-key');
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 })));
+      await ask(tokenS).expect(200);
+      await ask(tokenS).expect(200);
+      await ask(tokenS).expect(429);
+    });
   });
 });

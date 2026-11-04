@@ -12,6 +12,7 @@
     "backup": "tsx src/scripts/backup.ts",
     "restore": "tsx src/scripts/restore.ts",
     "reset": "tsx src/scripts/reset.ts",
+    "admin:create": "tsx src/scripts/create-admin.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

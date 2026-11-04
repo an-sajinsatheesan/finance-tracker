@@ -19,6 +19,7 @@ import * as contracts from '../controllers/contract.controller.js';
 import * as gold from '../controllers/gold.controller.js';
 import * as loans from '../controllers/loan.controller.js';
 import * as admin from '../controllers/admin.controller.js';
+import * as ai from '../controllers/ai.controller.js';
 import { requireAdmin } from '../middleware/admin.js';
 
 export const router = Router();
@@ -33,11 +34,13 @@ router.post('/invitations/:token/accept', rateLimit(10, 10 * 60 * 1000), body(v.
 router.get('/cron/reminders', h(reminders.cron));
 router.post('/cron/reminders', h(reminders.cron));
 
-// Admin panel (user control): its own sign-in from ADMIN_USERNAME / ADMIN_PASSWORD.
+// Admin panel (user control): its own sign-in from the admins collection (npm run admin:create).
 router.post('/admin/login', rateLimit(10, 10 * 60 * 1000), body(v.adminLoginSchema), h(admin.login));
 router.get('/admin/users', requireAdmin, h(admin.users));
+router.get('/admin/users/:id', requireAdmin, h(admin.userDetails));
 router.put('/admin/users/:id', requireAdmin, body(v.adminUserUpdateSchema), h(admin.updateUser));
-router.post('/admin/users/:id/password-link', requireAdmin, h(admin.passwordLink));
+router.put('/admin/users/:id/password', requireAdmin, body(v.adminPasswordSchema), h(admin.setPassword));
+router.delete('/admin/users/:id', requireAdmin, h(admin.deleteUser));
 
 // Everything below requires a valid JWT; all data access is scoped to the user's workspace.
 router.use(requireAuth);
@@ -118,6 +121,8 @@ router.post('/transfers/:id/archive', h(accounts.archiveTransfer));
 router.get('/wealth', query(v.wealthQuery), h(accounts.wealth));
 router.get('/balances', query(v.monthQuery), h(accounts.balances));
 
+router.post('/ai/chat', body(v.aiChatSchema), h(ai.chat));
+
 router.get('/backup/export', h(backup.exportJson));
 router.post('/backup/validate', h(backup.validate));
 router.post('/backup/restore', h(backup.restore));
@@ -125,4 +130,5 @@ router.post('/backup/snapshots', h(backup.snapshot));
 router.get('/backup/snapshots', h(backup.listSnapshots));
 router.get('/backup/snapshots/:id', h(backup.downloadSnapshot));
 // Intentionally no routes to delete the database, the workspace or recorded money (expenses, income,
-// balances are archived instead). Only planned commitments can be deleted.
+// balances are archived instead). Only planned commitments can be deleted. The one exception is the
+// admin panel's user delete above, which removes a workspace along with the last person in it.

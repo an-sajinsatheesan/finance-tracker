@@ -7,6 +7,8 @@ const userSchema = new Schema(
     email: { type: String, lowercase: true, trim: true, index: { unique: true, sparse: true } },
     /** Empty for an invited partner until they accept the invitation. */
     passwordHash: { type: String, select: false },
+    /** Set when the admin changes the password; sessions signed in before it stop working. */
+    passwordChangedAt: { type: Date },
     displayName: { type: String, required: true, trim: true },
     relationship: { type: String, default: '' },
     workspaceId: { type: Schema.Types.ObjectId, ref: 'Workspace', required: true, index: true },

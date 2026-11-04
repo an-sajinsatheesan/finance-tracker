@@ -404,3 +404,19 @@ export const adminUserUpdateSchema = z.object({
   email: z.string().trim().email().max(254).optional(),
   displayName: text(50).min(1).optional(),
 });
+export const adminPasswordSchema = z.object({ password });
+
+// ---------- AI chat ----------
+
+export const aiChatSchema = z.object({
+  messages: z
+    .array(
+      z.discriminatedUnion('role', [
+        z.object({ role: z.literal('user'), content: z.string().trim().min(1).max(2000) }),
+        z.object({ role: z.literal('assistant'), content: z.string().trim().min(1).max(10_000) }),
+      ]),
+    )
+    .min(1)
+    .max(50)
+    .refine((m) => m[m.length - 1]?.role === 'user', 'The last message must be from the user'),
+});

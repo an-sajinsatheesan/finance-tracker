@@ -17,6 +17,7 @@ import WealthPage from './pages/Wealth';
 import BalancesPage from './pages/Balances';
 import SettingsPage from './pages/Settings';
 import Admin from './pages/Admin';
+import Chat from './pages/Chat';
 
 export default function App() {
   const { user, workspace, loading } = useAuth();
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="wealth" element={<WealthPage />} />
         <Route path="balances" element={<BalancesPage />} />
         <Route path="goals" element={<Goals />} />
+        <Route path="chat" element={<Chat />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
