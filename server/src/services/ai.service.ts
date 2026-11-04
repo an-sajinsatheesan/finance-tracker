@@ -8,15 +8,17 @@ export interface ChatMessage { role: 'user' | 'assistant'; content: string }
 
 /** Older messages are dropped so that a long chat doesn't keep getting more expensive. */
 const HISTORY = 10;
-const MAX_REPLY_TOKENS = 1000;
+/** Covers the model's hidden reasoning as well as the visible reply; too low a cap leaves the reply empty. */
+const MAX_REPLY_TOKENS = 4000;
 
 const INSTRUCTIONS = `You are the money assistant inside a household finance tracker. You help the person understand their own numbers and plan monthly budgets and savings.
 
 Rules:
-- Base every figure on the DATA below and do the arithmetic carefully. If something isn't in the data, say so; never invent numbers.
+- Base every figure on the DATA below and do the arithmetic carefully. Never present an invented number as fact. If a plan needs something that isn't in the data, such as a new loan's interest rate, use a reasonable assumption, label it clearly as an assumption, and show how the result changes with it.
+- For loans, "accounts" gives the balance, and "rate" and "lastPayment" when known. Convert between currencies with exchangeRates when a plan mixes them, and say that you did. "lkh" or "lakh" means 100,000.
 - Be practical and specific to their numbers: where the money goes, what is left, a monthly savings amount they could set, and how long a goal would take.
 - What can still be saved this month = cashLeftAfterGoals + incomePending - commitmentsStillToPay. Goal money and paid bills are already taken out, so don't subtract them again. If the result is negative, say they are short by that amount.
-- Keep answers short: a few sentences or "-" bullets. Plain text; no tables or headings. Show the currency with amounts.
+- Keep simple answers to a few sentences or "-" bullets. When asked for a plan, give clear numbered steps with monthly amounts and dates, in under 350 words. Say plainly if the goal doesn't fit their numbers, and what would. Plain text; no tables or headings. Show the currency with amounts.
 - Reply in the language the person writes in (for example Malayalam, or Malayalam in English letters).
 - Give budgeting and savings guidance only. Don't recommend specific stocks, funds, or other products to buy or sell, or tax or legal actions; for those, explain the general idea and suggest a licensed adviser.
 - Only help with personal finance and this app. Politely decline anything else.
@@ -43,7 +45,7 @@ export async function chat(workspaceId: string, userId: string, messages: ChatMe
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${env.openaiApiKey}`, 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(25_000), // the serverless function stops at 30 seconds
+      signal: AbortSignal.timeout(55_000), // the serverless function stops at 60 seconds (vercel.json)
       body: JSON.stringify({
         model: env.openaiModel,
         max_completion_tokens: MAX_REPLY_TOKENS,
@@ -58,10 +60,19 @@ export async function chat(workspaceId: string, userId: string, messages: ChatMe
       console.error(`OpenAI request failed with status ${res.status}`);
       throw new AppError(503, res.status === 429 ? 'The AI service is busy or out of credit. Try again later.' : 'The AI service isn’t available right now. Try again later.');
     }
-    const body = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
-    const reply = body.choices?.[0]?.message?.content?.trim();
-    if (!reply) throw new AppError(503, 'The AI didn’t return an answer. Try asking again.');
-    return { reply };
+    const body = (await res.json()) as {
+      choices?: { finish_reason?: string; message?: { content?: string | null; refusal?: string | null } }[];
+      usage?: { completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } };
+    };
+    const choice = body.choices?.[0];
+    const cutOff = choice?.finish_reason === 'length';
+    const reply = (choice?.message?.content ?? choice?.message?.refusal)?.trim();
+    if (!reply) {
+      // Counts only, never the conversation, so that the next failure can be diagnosed from the logs.
+      console.error(`OpenAI returned no text: finish=${choice?.finish_reason} output=${body.usage?.completion_tokens} reasoning=${body.usage?.completion_tokens_details?.reasoning_tokens}`);
+      throw new AppError(503, cutOff ? 'That question needs too long an answer. Try asking one part at a time.' : 'The AI didn’t return an answer. Try asking again.');
+    }
+    return { reply: cutOff ? `${reply}\n\n(The answer was cut off because it got too long. Ask me to continue.)` : reply };
   } catch (err) {
     await refund();
     if (err instanceof AppError) throw err;

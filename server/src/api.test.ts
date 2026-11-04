@@ -592,5 +592,37 @@ d('API', () => {
       await ask(tokenS).expect(200);
       await ask(tokenS).expect(429);
     });
+
+    it('explains an empty reply cut off by the token limit, and flags a partly cut-off one', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      const { AiUsage } = await import('./models/index.js');
+      await AiUsage.deleteMany({});
+      const reply = (content: string | null, finish_reason: string) => vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason, message: { content } }], usage: { completion_tokens: 4000, completion_tokens_details: { reasoning_tokens: 4000 } } }), { status: 200 }));
+      vi.stubGlobal('fetch', reply('', 'length'));
+      const empty = await ask(tokenS).expect(503);
+      expect(empty.body.error).toMatch(/one part at a time/);
+      vi.stubGlobal('fetch', reply(null, 'stop'));
+      expect((await ask(tokenS).expect(503)).body.error).toMatch(/Try asking again/);
+      expect((await AiUsage.findOne({ userId: sajinId }).lean())?.count).toBe(0); // failed answers aren't counted
+      vi.stubGlobal('fetch', reply('Step 1', 'length'));
+      expect((await ask(tokenS).expect(200)).body.reply).toMatch(/^Step 1\n\n.*cut off/);
+    });
+
+    it('tells the AI a loan’s rate and payment', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 }));
+      const { Account, LoanEntry, Lookup } = await import('./models/index.js');
+      const type = await Lookup.findOne({ type: 'accountType', 'meta.group': 'liability', workspaceId: null }).lean();
+      const workspaceId = (await request(app).get('/api/workspace').set(auth(tokenS)).expect(200)).body.id;
+      const account = await Account.create({ workspaceId, name: 'AI test home loan', bank: 'x', currency: 'INR', accountType: type!.code, type: 'common', openedMonth: month });
+      for (const line of [{ kind: 'disbursement', amount: 1000000 }, { kind: 'rate', amount: 0, rate: 8.5 }, { kind: 'repayment', amount: 25000 }]) {
+        await LoanEntry.create({ workspaceId, accountId: account._id, date: `${month}-01`, details: '', ref: '', notes: '', ...line });
+      }
+      vi.stubGlobal('fetch', fetchMock);
+      await ask(tokenS).expect(200);
+      const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      const data = JSON.parse((JSON.parse(init.body as string).messages[0].content as string).split('DATA:\n')[1]);
+      expect(data.accounts.find((a: any) => a.name === 'AI test home loan')).toMatchObject({ kind: 'liability', rate: 8.5, lastPayment: 25000 });
+    });
   });
 });

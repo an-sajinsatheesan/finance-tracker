@@ -156,7 +156,7 @@ function SidebarContent({ collapsed, onClose }: { collapsed?: boolean; onClose?:
       active ? 'bg-brand-50 font-semibold text-brand-800' : 'text-stone-600 hover:bg-stone-50 hover:text-stone-900');
   return (
     <>
-      <div className={cx('flex items-center gap-2.5 pb-6 pt-7', collapsed ? 'justify-center px-0' : 'px-6')}>
+      <div className={cx('flex shrink-0 items-center gap-2.5 pb-6 pt-7', collapsed ? 'justify-center px-0' : 'px-6')}>
         <Logo />
         {!collapsed && (
           <div className="min-w-0 flex-1">
@@ -168,7 +168,8 @@ function SidebarContent({ collapsed, onClose }: { collapsed?: boolean; onClose?:
           <button onClick={onClose} className="rounded-lg p-1.5 text-stone-500 hover:bg-stone-100" aria-label="Close menu"><X className="size-4" /></button>
         )}
       </div>
-      <nav className={cx('flex-1', collapsed ? 'px-3' : 'px-4')}>
+      {/* Logo and workspace card stay put; only the menu scrolls, and only when it doesn't fit. */}
+      <nav className={cx('scroll-thin min-h-0 flex-1 overflow-y-auto', collapsed ? 'px-3' : 'px-4')}>
         {NAV_GROUPS.map((g, i) => (
           <div key={g.title} className={cx(i > 0 && 'mt-3 border-t border-stone-200 pt-3')}>
             {!collapsed && <div className="px-3 pb-1.5 text-xs font-medium text-stone-500">{g.title}</div>}
@@ -190,7 +191,7 @@ function SidebarContent({ collapsed, onClose }: { collapsed?: boolean; onClose?:
         ))}
       </nav>
       {!collapsed && (
-        <div className="p-4">
+        <div className="shrink-0 p-4">
           <div className="rounded-2xl border border-brand-200 bg-linear-to-br from-brand-50 to-white p-3.5">
             <div className="flex items-center gap-2 text-sm font-semibold text-brand-800">
               <Users className="size-4" />
@@ -231,7 +232,7 @@ export function Layout() {
     // Fixed shell: sidebar and header never move and the body never scrolls; each page scrolls its own area (see Page).
     <div className="flex h-dvh overflow-hidden">
       {/* Desktop sidebar */}
-      <aside className={cx('scroll-thin hidden shrink-0 flex-col overflow-y-auto border-r border-stone-200 bg-white transition-[width] duration-200 md:flex', collapsed ? 'w-20' : 'w-64')}>
+      <aside className={cx('hidden shrink-0 flex-col overflow-hidden border-r border-stone-200 bg-white transition-[width] duration-200 md:flex', collapsed ? 'w-20' : 'w-64')}>
         <SidebarContent collapsed={collapsed} />
       </aside>
 
@@ -239,7 +240,7 @@ export function Layout() {
       {drawer && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-stone-900/40" onClick={() => setDrawer(false)} aria-hidden />
-          <aside className="scroll-thin absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overflow-y-auto bg-white shadow-xl" role="dialog" aria-label="Menu">
+          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overflow-hidden bg-white shadow-xl" role="dialog" aria-label="Menu">
             <SidebarContent onClose={() => setDrawer(false)} />
           </aside>
         </div>

@@ -3,6 +3,7 @@ import { notFound } from '../utils/AppError.js';
 import { getSummary } from './summary.service.js';
 import { getWealth } from './account.service.js';
 import { listGoals } from './goal.service.js';
+import { getLoan } from './loan.service.js';
 
 /**
  * The compact picture of one workspace that is sent to the AI with each question. Only names and
@@ -20,6 +21,14 @@ export async function getAiContext(workspaceId: string, month: string, day: stri
     getWealth(workspaceId, month, 'all'),
     listGoals(workspaceId),
   ]);
+
+  // Interest rate and usual payment of each loan, from its statement lines (when they've been entered).
+  const debts = wealth.accounts.filter((a) => a.group === 'liability');
+  const statements = await Promise.all(debts.map((a) => getLoan(workspaceId, a.id)));
+  const loans = new Map(debts.map((a, i) => {
+    const { rate, lastPayment, interestLastYear } = statements[i].summary;
+    return [a.id, statements[i].entries.length ? { rate, lastPayment, interestLastYear } : {}];
+  }));
 
   const picture = (s: (typeof summaries)[number]) => ({
     thisMonth: {
@@ -50,6 +59,7 @@ export async function getAiContext(workspaceId: string, month: string, day: stri
     })),
     accounts: wealth.accounts.map((a) => ({
       name: a.name, kind: a.group, currency: a.currency, owner: a.type === 'common' ? 'shared' : who(a.ownerId), balance: a.current, invested: a.invested,
+      ...loans.get(a.id),
     })),
     netWorth: wealth.combined,
     goals: goals.filter((g) => g.status === 'active').map((g) => ({

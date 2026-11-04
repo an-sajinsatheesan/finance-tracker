@@ -130,6 +130,11 @@
   .p-tag { font-size: 0.6875rem; padding: 0.15rem 0.5rem; font-weight: 600; border-radius: 999px; }
   .p-message { margin: 0; border-radius: 0.625rem; }
   .p-message.p-message-error { font-size: 0.75rem; }
+  /* Inline error notes (ErrorNote): the same soft rose as the app's other alerts, wrapping long text. */
+  .p-inline-message { align-items: flex-start; gap: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 0.625rem; font-size: 0.75rem; line-height: 1.25rem; text-align: left; }
+  .p-inline-message.p-inline-message-error { background: #fff1f2; border: 1px solid #fecdd3; color: #be123c; }
+  .p-inline-message.p-inline-message-error .p-inline-message-icon { flex-shrink: 0; width: 1rem; height: 1rem; margin: 0.125rem 0 0; color: #e11d48; }
+  .p-inline-message .p-inline-message-text { font-size: inherit; font-weight: 500; }
   .p-checkbox .p-checkbox-box { width: 1.125rem; height: 1.125rem; border-radius: 0.3rem; }
   .p-checkbox.p-highlight .p-checkbox-box { background: #5b5cf0; border-color: #5b5cf0; }
   .p-radiobutton.p-highlight .p-radiobutton-box { background: #5b5cf0; border-color: #5b5cf0; }
